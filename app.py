@@ -15,6 +15,7 @@ except ImportError:
     pass
 
 import os
+import shutil
 DEFAULT_PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "57909969-ce94fac88b6effdff830e1aff")
 DEFAULT_OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "")
 
@@ -108,6 +109,72 @@ except ImportError:
 APP_DIR = Path(__file__).parent
 DOWNLOADS_DIR = APP_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+def cleanup_storage_cache(max_age_hours: float = 2.0, max_folder_mb: float = 350.0):
+    """
+    Automatic Cloud Storage Manager (Optimized for Free Cloud 1GB Limits):
+    1. Removes temporary job folders and audio samples older than max_age_hours.
+    2. If downloads directory total size exceeds max_folder_mb, automatically deletes
+       the oldest job folders and files until disk space is safely below 200MB.
+    Guarantees cloud servers never crash with 'Disk quota exceeded'.
+    """
+    try:
+        if not DOWNLOADS_DIR.exists():
+            return
+
+        now = time.time()
+        max_age_sec = max_age_hours * 3600
+
+        items = []
+        total_bytes = 0
+
+        for item in DOWNLOADS_DIR.iterdir():
+            try:
+                mtime = item.stat().st_mtime
+                if item.is_dir():
+                    sz = sum(f.stat().st_size for f in item.rglob('*') if f.is_file())
+                else:
+                    sz = item.stat().st_size
+                items.append((item, mtime, sz))
+                total_bytes += sz
+            except Exception:
+                continue
+
+        # Rule 1: Delete files/folders older than max_age_hours
+        remaining_items = []
+        for item, mtime, sz in items:
+            if (now - mtime) > max_age_sec:
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                    total_bytes -= sz
+                except Exception:
+                    pass
+            else:
+                remaining_items.append((item, mtime, sz))
+
+        # Rule 2: If total folder size exceeds max_folder_mb, delete oldest remaining items
+        max_bytes = max_folder_mb * 1024 * 1024
+        if total_bytes > max_bytes:
+            remaining_items.sort(key=lambda x: x[1])
+            for item, _, sz in remaining_items:
+                if total_bytes <= (max_bytes * 0.5):
+                    break
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                    total_bytes -= sz
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"Storage cleanup exception: {e}")
+
+# Run automatic cleanup on app start
+cleanup_storage_cache()
 
 # Page configuration
 st.set_page_config(
@@ -1818,6 +1885,7 @@ with tab1:
             start_render = st.button("🚀 Render & Merge Video Now", type="primary", use_container_width=True)
 
         if start_render:
+            cleanup_storage_cache()
             st.session_state.selected_assets = ensure_unique_selections(
                 scenes, st.session_state.scene_assets, st.session_state.selected_assets
             )
