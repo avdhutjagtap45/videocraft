@@ -195,7 +195,7 @@ st.markdown("""
 </head>
 """, unsafe_allow_html=True)
 
-# Custom High-End Pure Light Theme CSS (InVideo / Modern Creator Studio Aesthetic)
+# Custom Modern Minimalist Creator Studio CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -207,63 +207,49 @@ st.markdown("""
         color: #0F172A !important;
     }
 
-    /* Ambient Clean Light Canvas */
+    /* Ambient Clean Light Background */
     .stApp {
-        background: radial-gradient(ellipse 90% 50% at 50% -10%, rgba(37, 99, 235, 0.04) 0%, transparent 60%),
-                    radial-gradient(ellipse 70% 40% at 85% 15%, rgba(16, 185, 129, 0.03) 0%, transparent 50%),
-                    #F8FAFC !important;
+        background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(37, 99, 235, 0.03) 0%, transparent 60%), #F8FAFC !important;
     }
 
-    /* Polished Light Sidebar */
+    /* Minimalist Light Sidebar */
     section[data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
         border-right: 1px solid #E2E8F0 !important;
-        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03) !important;
+        box-shadow: none !important;
     }
     section[data-testid="stSidebar"] hr {
-        border-color: #E2E8F0 !important;
-        margin: 1.2rem 0 !important;
-    }
-    section[data-testid="stSidebar"] .stMarkdown h3 {
-        font-size: 0.82rem !important;
-        font-weight: 700 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.07em !important;
-        color: #475569 !important;
-        margin-top: 1.3rem !important;
-        margin-bottom: 0.6rem !important;
-        display: flex;
-        align-items: center;
-        gap: 6px;
+        border-color: #F1F5F9 !important;
+        margin: 1rem 0 !important;
     }
 
-    /* Sidebar Brand Card */
+    /* Minimalist Brand Card */
     .sidebar-brand-card {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 14px 16px;
-        background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(79, 70, 229, 0.04) 100%);
-        border: 1px solid rgba(37, 99, 235, 0.18);
+        gap: 10px;
+        padding: 12px 14px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
         border-radius: 12px;
-        margin-bottom: 20px;
+        margin-bottom: 14px;
     }
     .sidebar-brand-icon {
-        font-size: 1.8rem;
+        font-size: 1.35rem;
     }
     .sidebar-brand-title {
-        font-size: 1.05rem;
+        font-size: 0.96rem;
         font-weight: 800;
         letter-spacing: -0.02em;
-        color: #1E3A8A;
+        color: #0F172A;
         line-height: 1.2;
     }
     .sidebar-brand-subtitle {
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         color: #64748B;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
     }
 
     /* Clean Card Surfaces */
@@ -271,459 +257,29 @@ st.markdown("""
         background: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
         border-radius: 12px !important;
-        padding: 20px 24px !important;
-        margin-bottom: 18px !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02) !important;
-        transition: all 0.2s ease !important;
-    }
-    .studio-card:hover {
-        border-color: #CBD5E1 !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06) !important;
-    }
-
-    /* Studio Script Editor Card */
-    .script-editor-card {
-        background: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important;
-        border-radius: 14px !important;
-        padding: 18px 22px !important;
-        margin-top: 14px !important;
+        padding: 18px 20px !important;
         margin-bottom: 16px !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(37, 99, 235, 0.03) !important;
-        transition: all 0.25s ease !important;
-    }
-    .script-editor-card:focus-within {
-        border-color: #2563EB !important;
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12), 0 8px 24px rgba(37, 99, 235, 0.06) !important;
-    }
-    .script-editor-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-        flex-wrap: wrap;
-        gap: 10px;
-    }
-    .script-editor-title {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-    .script-editor-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 38px;
-        height: 38px;
-        background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(79, 70, 229, 0.08) 100%);
-        border: 1px solid rgba(37, 99, 235, 0.22);
-        border-radius: 10px;
-        font-size: 1.25rem;
-    }
-    .script-editor-heading {
-        font-size: 1.05rem;
-        font-weight: 800;
-        color: #0F172A;
-        letter-spacing: -0.01em;
-        line-height: 1.2;
-    }
-    .script-editor-subheading {
-        font-size: 0.78rem;
-        color: #64748B;
-        margin-top: 2px;
-    }
-    .script-live-stats {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-    .script-stat-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.78rem;
-        font-weight: 700;
-        padding: 5px 12px;
-        border-radius: 8px;
-        background: #F1F5F9;
-        color: #334155;
-        border: 1px solid #E2E8F0;
-    }
-    .script-stat-chip.active {
-        background: #EFF6FF;
-        color: #1D4ED8;
-        border-color: #BFDBFE;
-    }
-    .script-editor-footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid #F1F5F9;
-        font-size: 0.78rem;
-        color: #64748B;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    /* Hero Header */
-    .hero-container {
-        padding: 6px 0 16px 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .hero-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(37, 99, 235, 0.08);
-        border: 1px solid rgba(37, 99, 235, 0.25);
-        color: #2563EB;
-        padding: 4px 14px;
-        border-radius: 9999px;
-        font-size: 0.74rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        width: fit-content;
-    }
-    .hero-title {
-        font-size: 2.3rem;
-        font-weight: 800;
-        letter-spacing: -0.03em;
-        color: #0F172A;
-        line-height: 1.15;
-        margin: 0;
-    }
-    .hero-desc {
-        color: #475569;
-        font-size: 1.02rem;
-        line-height: 1.5;
-        max-width: 920px;
-        margin: 0;
-    }
-    .hero-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 4px;
-    }
-    .hero-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: #F1F5F9;
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
-        padding: 4px 12px;
-        font-size: 0.78rem;
-        color: #334155;
-        font-weight: 600;
-    }
-
-    /* Stepper */
-    .stepper-container {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 10px 18px;
-        margin-bottom: 22px;
-        overflow-x: auto;
-        gap: 6px;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
-    }
-    .step-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: #64748B;
-        padding: 6px 14px;
-        border-radius: 8px;
-        transition: all 0.2s ease;
-        white-space: nowrap;
-    }
-    .step-num {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        background: #F1F5F9;
-        color: #64748B;
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-    .step-item.active {
-        color: #2563EB;
-        background: rgba(37, 99, 235, 0.08);
-        border: 1px solid rgba(37, 99, 235, 0.25);
-    }
-    .step-item.active .step-num {
-        background: #2563EB;
-        color: #FFFFFF;
-    }
-    .step-item.completed {
-        color: #059669;
-        background: rgba(16, 185, 129, 0.08);
-        border: 1px solid rgba(16, 185, 129, 0.2);
-    }
-    .step-item.completed .step-num {
-        background: #10B981;
-        color: #FFFFFF;
-    }
-    .step-arrow {
-        color: #CBD5E1;
-        font-size: 0.75rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02) !important;
     }
 
     /* Section Headings */
     .section-title {
-        font-size: 1.15rem;
+        font-size: 1.05rem;
         font-weight: 700;
         color: #0F172A;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
     }
     .section-badge {
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         font-weight: 700;
-        text-transform: uppercase;
-        padding: 3px 9px;
-        border-radius: 6px;
-        background: rgba(37, 99, 235, 0.08);
-        color: #2563EB;
-        border: 1px solid rgba(37, 99, 235, 0.2);
-    }
-
-    /* InVideo AI Multi-Track Timeline Box */
-    .timeline-container {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 22px;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-    .timeline-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #F1F5F9;
-    }
-    .timeline-title {
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: #1E293B;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .timeline-track-title {
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #64748B;
-        margin-bottom: 6px;
-    }
-    .timeline-track {
-        display: flex;
-        gap: 8px;
-        overflow-x: auto;
-        padding-bottom: 6px;
-    }
-    .timeline-clip {
-        flex: 1;
-        min-width: 150px;
-        background: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
-        padding: 8px 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        transition: all 0.2s ease;
-    }
-    .timeline-clip:hover {
-        border-color: #93C5FD;
-        background: #F1F5F9;
-    }
-    .timeline-clip-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .timeline-clip-label {
-        font-size: 0.75rem;
-        font-weight: 700;
-        color: #0F172A;
-    }
-    .timeline-clip-dur {
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: #2563EB;
-        background: #EFF6FF;
-        border: 1px solid #DBEAFE;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .timeline-clip-text {
-        font-size: 0.73rem;
-        color: #64748B;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* Scene Header Banner */
-    .scene-header-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-left: 4px solid #2563EB;
-        border-radius: 10px;
-        padding: 12px 18px;
-        margin: 20px 0 12px 0;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-    .scene-badge-num {
-        background: linear-gradient(135deg, #2563EB, #4F46E5);
-        color: white;
-        font-weight: 800;
-        font-size: 0.8rem;
-        padding: 4px 10px;
-        border-radius: 6px;
-        letter-spacing: 0.03em;
-    }
-    .scene-quote {
-        color: #1E293B;
-        font-size: 0.95rem;
-        font-weight: 600;
-    }
-    .scene-duration-badge {
-        background: #F1F5F9;
-        border: 1px solid #E2E8F0;
-        border-radius: 6px;
-        padding: 3px 10px;
-        font-size: 0.78rem;
-        color: #475569;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-
-    /* Asset Grid & Card Styling */
-    .asset-card-wrapper {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 10px;
-        padding: 10px;
-        margin-bottom: 12px;
-        transition: all 0.2s ease;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-    .asset-card-wrapper:hover {
-        border-color: #93C5FD;
-        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
-    }
-    .asset-card-selected {
-        border: 2px solid #2563EB !important;
-        background: rgba(37, 99, 235, 0.02) !important;
-        box-shadow: 0 0 12px rgba(37, 99, 235, 0.15) !important;
-    }
-    .chip {
-        display: inline-block;
         padding: 2px 8px;
-        border-radius: 5px;
-        font-size: 0.72rem;
-        font-weight: 700;
-        margin-right: 4px;
-        margin-bottom: 4px;
-    }
-    .chip-video {
+        border-radius: 999px;
         background: #EFF6FF;
-        color: #1D4ED8;
-        border: 1px solid #BFDBFE;
-    }
-    .chip-photo {
-        background: #FAF5FF;
-        color: #7E22CE;
-        border: 1px solid #E9D5FF;
-    }
-    .chip-ai {
-        background: #FEF3C7;
-        color: #B45309;
-        border: 1px solid #FDE68A;
-    }
-    .chip-conflict {
-        background: #FFFBEB;
-        color: #B45309;
-        border: 1px solid #FCD34D;
-    }
-    .chip-match {
-        background: #ECFDF5;
-        color: #047857;
-        border: 1px solid #A7F3D0;
-    }
-
-    /* Metric Cards */
-    .metric-card-box {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 16px 20px;
-        text-align: center;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-    }
-    .metric-card-label {
-        font-size: 0.76rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #64748B;
-        margin-bottom: 6px;
-    }
-    .metric-card-val {
-        font-size: 1.6rem;
-        font-weight: 800;
-        color: #0F172A;
-        line-height: 1.2;
-    }
-
-    /* Streamlit Tab Enhancements */
-    .stTabs [data-baseweb="tab-list"] {
-        background: #F1F5F9 !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 10px !important;
-        padding: 5px 6px !important;
-        gap: 6px !important;
-    }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 6px !important;
-        padding: 8px 18px !important;
-        font-weight: 600 !important;
-        color: #64748B !important;
-        border: none !important;
-        transition: all 0.2s ease !important;
-    }
-    .stTabs [aria-selected="true"] {
-        background: #FFFFFF !important;
-        color: #2563EB !important;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+        color: #2563EB;
+        border: 1px solid #DBEAFE;
     }
 
     /* Buttons */
@@ -733,14 +289,16 @@ st.markdown("""
         border: none !important;
         border-radius: 8px !important;
         font-weight: 700 !important;
+        font-size: 0.92rem !important;
         letter-spacing: 0.01em !important;
         padding: 0.55rem 1.25rem !important;
-        box-shadow: 0 3px 12px rgba(37, 99, 235, 0.25) !important;
-        transition: all 0.2s ease !important;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22) !important;
+        transition: all 0.15s ease !important;
     }
     div.stButton > button[kind="primary"]:hover {
+        opacity: 0.95 !important;
         transform: translateY(-1px) !important;
-        box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35) !important;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
     }
     div.stButton > button[kind="secondary"] {
         background: #FFFFFF !important;
@@ -749,14 +307,14 @@ st.markdown("""
         border-radius: 8px !important;
         font-weight: 600 !important;
         padding: 0.55rem 1.1rem !important;
-        transition: all 0.2s ease !important;
+        transition: all 0.15s ease !important;
     }
     div.stButton > button[kind="secondary"]:hover {
         background: #F8FAFC !important;
         border-color: #94A3B8 !important;
     }
 
-    /* Inputs & Textareas */
+    /* Form Inputs & Textarea */
     div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] {
         background-color: #FFFFFF !important;
         border-radius: 8px !important;
@@ -765,26 +323,48 @@ st.markdown("""
     }
     div[data-baseweb="input"]:focus-within, div[data-baseweb="textarea"]:focus-within {
         border-color: #2563EB !important;
-        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12) !important;
     }
 
-    /* Expanders */
+    /* Minimalist Expanders */
     div[data-testid="stExpander"] {
         background: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
         border-radius: 10px !important;
-        margin-bottom: 12px !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+        margin-bottom: 10px !important;
+        box-shadow: none !important;
     }
     div[data-testid="stExpander"] summary {
         font-weight: 600 !important;
-        color: #0F172A !important;
+        font-size: 0.88rem !important;
+        color: #1E293B !important;
+    }
+
+    /* Streamlit Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        background: transparent !important;
+        border-bottom: 1px solid #E2E8F0 !important;
+        padding: 0 !important;
+        gap: 16px !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent !important;
+        border: none !important;
+        border-bottom: 2px solid transparent !important;
+        padding: 8px 4px !important;
+        font-weight: 600 !important;
+        font-size: 0.88rem !important;
+        color: #64748B !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #2563EB !important;
+        border-bottom: 2px solid #2563EB !important;
     }
 
     /* Progress Bar */
     div[data-testid="stProgress"] > div > div > div > div {
         background: linear-gradient(90deg, #2563EB, #10B981) !important;
-        border-radius: 8px !important;
+        border-radius: 6px !important;
     }
 
     /* Video Frame */
@@ -792,186 +372,178 @@ st.markdown("""
         border-radius: 12px;
         overflow: hidden;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
     }
 
-    /* ============================================================ */
-    /* 📱 FULL RESPONSIVE & MOBILE APP ADAPTATIONS (<= 768px)       */
-    /* ============================================================ */
+    /* Chips */
+    .chip {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 5px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
+    .chip-match {
+        background: #ECFDF5;
+        color: #047857;
+        border: 1px solid #A7F3D0;
+    }
+    .chip-conflict {
+        background: #FFFBEB;
+        color: #B45309;
+        border: 1px solid #FCD34D;
+    }
+
+    /* Timeline & Storyboard (Clean & Uncluttered) */
+    .timeline-container {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 16px;
+    }
+    .timeline-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+    }
+    .timeline-title {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #1E293B;
+    }
+    .timeline-track-title {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748B;
+        margin-bottom: 6px;
+    }
+    .timeline-track {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+    .timeline-clip {
+        flex: 1;
+        min-width: 140px;
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 6px;
+        padding: 6px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+    .timeline-clip-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .timeline-clip-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #0F172A;
+    }
+    .timeline-clip-dur {
+        font-size: 0.68rem;
+        font-weight: 700;
+        color: #2563EB;
+        background: #EFF6FF;
+        padding: 1px 5px;
+        border-radius: 4px;
+    }
+    .timeline-clip-text {
+        font-size: 0.7rem;
+        color: #64748B;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .asset-card-wrapper {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 8px;
+        margin-bottom: 10px;
+    }
+    .asset-card-selected {
+        border: 1.5px solid #2563EB !important;
+        background: #F8FAFC !important;
+    }
+
+    /* Stepper */
+    .stepper-container {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
+        padding: 8px 14px;
+        margin-bottom: 18px;
+        overflow-x: auto;
+    }
+    .step-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #64748B;
+        padding: 4px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+    }
+    .step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #F1F5F9;
+        color: #64748B;
+        font-size: 0.72rem;
+        font-weight: 700;
+    }
+    .step-item.active {
+        color: #2563EB;
+        background: #EFF6FF;
+    }
+    .step-item.active .step-num {
+        background: #2563EB;
+        color: #FFFFFF;
+    }
+    .step-item.completed {
+        color: #059669;
+        background: #ECFDF5;
+    }
+    .step-item.completed .step-num {
+        background: #10B981;
+        color: #FFFFFF;
+    }
+    .step-arrow {
+        color: #CBD5E1;
+        font-size: 0.72rem;
+    }
+
+    /* Responsive Mobile Adjustments */
     @media (max-width: 768px) {
-        /* Remove wasteful desktop padding and fit to mobile edge */
         .block-container {
-            padding-top: 1.2rem !important;
-            padding-bottom: 2.5rem !important;
+            padding-top: 1rem !important;
+            padding-bottom: 2rem !important;
             padding-left: 0.75rem !important;
             padding-right: 0.75rem !important;
-            max-width: 100% !important;
         }
-
-        /* Fluid Hero Section */
-        .hero-container {
-            padding: 4px 0 12px 0 !important;
-            gap: 6px !important;
-        }
-        .hero-title {
-            font-size: 1.55rem !important;
-            line-height: 1.22 !important;
-            letter-spacing: -0.02em !important;
-        }
-        .hero-desc {
-            font-size: 0.85rem !important;
-            line-height: 1.4 !important;
-        }
-        .hero-pill {
-            font-size: 0.68rem !important;
-            padding: 3px 10px !important;
-        }
-        .hero-chips {
-            gap: 5px !important;
-            margin-top: 2px !important;
-        }
-        .hero-chip {
-            font-size: 0.72rem !important;
-            padding: 3px 8px !important;
-        }
-
-        /* Compact Touch-Friendly Stepper with Horizontal Scroll */
-        .stepper-container {
-            padding: 8px 10px !important;
-            gap: 4px !important;
-            margin-bottom: 16px !important;
-            -webkit-overflow-scrolling: touch !important;
-            scrollbar-width: none !important;
-        }
-        .stepper-container::-webkit-scrollbar {
-            display: none !important;
-        }
-        .step-item {
-            padding: 5px 10px !important;
-            font-size: 0.72rem !important;
-            gap: 5px !important;
-        }
-        .step-num {
-            width: 18px !important;
-            height: 18px !important;
-            font-size: 0.68rem !important;
-        }
-        .step-arrow {
-            font-size: 0.65rem !important;
-        }
-
-        /* Responsive Studio Cards */
-        .studio-card {
-            padding: 14px 14px !important;
-            margin-bottom: 14px !important;
-            border-radius: 10px !important;
-        }
-        .section-title {
-            font-size: 1.02rem !important;
-            margin-bottom: 10px !important;
-            flex-wrap: wrap !important;
-            gap: 6px !important;
-        }
-
-        /* Scene Header Bar */
-        .scene-header-bar {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 8px !important;
-            padding: 10px 14px !important;
-        }
-        .scene-header-bar > div:first-child {
-            flex-wrap: wrap !important;
-            gap: 8px !important;
-        }
-        .scene-quote {
-            font-size: 0.86rem !important;
-            word-break: break-word !important;
-        }
-        .scene-duration-badge {
-            align-self: flex-start !important;
-        }
-
-        /* Touch-Friendly Large Buttons */
         div.stButton > button {
-            min-height: 44px !important;
-            font-size: 0.88rem !important;
-            touch-action: manipulation !important;
-            -webkit-tap-highlight-color: transparent !important;
-            border-radius: 8px !important;
-        }
-
-        /* Streamlit Tabs on Mobile */
-        .stTabs [data-baseweb="tab-list"] {
-            padding: 3px 4px !important;
-            gap: 4px !important;
-            overflow-x: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-        }
-        .stTabs [data-baseweb="tab"] {
-            padding: 6px 12px !important;
-            font-size: 0.8rem !important;
-            white-space: nowrap !important;
-        }
-
-        /* Touch Timeline Track */
-        .timeline-container {
-            padding: 12px !important;
-            margin-bottom: 16px !important;
-        }
-        .timeline-track {
-            -webkit-overflow-scrolling: touch !important;
-            padding-bottom: 4px !important;
-        }
-        .timeline-clip {
-            min-width: 130px !important;
-            padding: 6px 8px !important;
-        }
-
-        /* Metric Cards on Mobile */
-        .metric-card-box {
-            padding: 10px 12px !important;
-            border-radius: 10px !important;
-            margin-bottom: 6px !important;
-        }
-        .metric-card-val {
-            font-size: 1.25rem !important;
-        }
-        .metric-card-label {
-            font-size: 0.68rem !important;
-        }
-
-        /* Mobile Asset Cards */
-        .asset-card-wrapper {
-            padding: 12px !important;
-        }
-
-        /* Sidebar Branding on Mobile */
-        .sidebar-brand-card {
-            padding: 10px 12px !important;
-            margin-bottom: 14px !important;
-        }
-
-        /* Script Editor on Mobile */
-        .script-editor-card {
-            padding: 12px 14px !important;
-            border-radius: 12px !important;
-        }
-        .script-editor-header {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 8px !important;
-        }
-        .script-editor-heading {
-            font-size: 0.95rem !important;
-        }
-        .script-editor-subheading {
-            font-size: 0.74rem !important;
-        }
-        .script-editor-footer {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 6px !important;
+            min-height: 42px !important;
         }
     }
 </style>
@@ -1040,114 +612,82 @@ if "studio_authenticated" not in st.session_state:
     st.session_state.studio_authenticated = False
 
 def render_pin_lock_screen():
-    st.markdown("""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 16px 20px 16px;">
-        <div style="max-width: 440px; width: 100%; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 20px; padding: 36px 30px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05); text-align: center;">
-            <div style="display: inline-flex; align-items: center; justify-content: center; width: 68px; height: 68px; background: linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(79,70,229,0.08) 100%); border: 1px solid rgba(37,99,235,0.22); border-radius: 18px; font-size: 2.2rem; margin-bottom: 16px;">
-                🔒
-            </div>
-            <h2 style="font-size: 1.5rem; font-weight: 800; color: #0F172A; margin: 0 0 6px 0; letter-spacing: -0.02em;">
-                VideoCraft Studio
-            </h2>
-            <div style="display: inline-flex; align-items: center; gap: 6px; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 999px; padding: 3px 12px; font-size: 0.74rem; font-weight: 700; color: #1D4ED8; margin-bottom: 14px;">
-                🛡️ Private Creator Engine
-            </div>
-            <div style="font-size: 0.85rem; color: #64748B; line-height: 1.45; margin-bottom: 22px;">
-                Enter your 4-digit Security PIN to access the automated script-to-video production studio.
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_l1, col_l2, col_l3 = st.columns([1, 1.4, 1])
+    st.write("")
+    st.write("")
+    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
     with col_l2:
-        pin_val = st.text_input(
-            "Enter Security PIN",
-            type="password",
-            placeholder="Enter PIN (e.g. 0808)...",
-            max_chars=12,
-            key="studio_pin_box",
-            label_visibility="collapsed"
-        )
-        if st.button("🔓 Unlock Studio", type="primary", use_container_width=True, key="btn_unlock_studio"):
-            if pin_val.strip() == STUDIO_ACCESS_PIN:
-                st.session_state.studio_authenticated = True
-                st.session_state.pin_error = False
-                st.rerun()
-            else:
-                st.session_state.pin_error = True
-
-        if st.session_state.get("pin_error"):
-            st.markdown("""
-            <div style="background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:10px; font-size:0.82rem; color:#B91C1C; text-align:center; font-weight:700; margin-top:10px;">
-                ❌ Incorrect PIN! Access Denied.
-            </div>
-            """, unsafe_allow_html=True)
-
         st.markdown("""
-        <div style="text-align: center; margin-top: 18px; font-size: 0.74rem; color: #94A3B8;">
-            Protected by Cloud Studio Shield · Unauthorized Access Prohibited
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 28px 24px 20px 24px; text-align: center; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🔒</div>
+            <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; letter-spacing: -0.02em;">VideoCraft Studio</div>
+            <div style="font-size: 0.78rem; color: #64748B; margin-top: 2px;">Enter 4-digit PIN to access the studio</div>
         </div>
         """, unsafe_allow_html=True)
+
+        with st.form("studio_pin_form", clear_on_submit=False):
+            pin_val = st.text_input(
+                "Security PIN",
+                type="password",
+                placeholder="Enter PIN (e.g. 0808)...",
+                max_chars=12,
+                key="studio_pin_box",
+                label_visibility="collapsed"
+            )
+            unlock_clicked = st.form_submit_button("🔓 Unlock Studio", type="primary", use_container_width=True)
+            if unlock_clicked:
+                if pin_val.strip() == STUDIO_ACCESS_PIN:
+                    st.session_state.studio_authenticated = True
+                    st.session_state.pin_error = False
+                    st.rerun()
+                else:
+                    st.session_state.pin_error = True
+
+        if st.session_state.get("pin_error"):
+            st.error("❌ Incorrect PIN. Access Denied.")
 
 if not st.session_state.studio_authenticated:
     render_pin_lock_screen()
     st.stop()
 
-# --- SIDEBAR SETTINGS ---
+# --- MINIMALIST SIDEBAR ---
 with st.sidebar:
     st.markdown("""
-    <div class="sidebar-brand-card">
-        <div class="sidebar-brand-icon">🎬</div>
-        <div>
-            <div class="sidebar-brand-title">VideoCraft Studio</div>
-            <div class="sidebar-brand-subtitle">InVideo AI Creator Engine</div>
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem;">🎬</span>
+            <div>
+                <div style="font-size: 0.95rem; font-weight: 800; color: #0F172A; line-height: 1.2;">VideoCraft</div>
+                <div style="font-size: 0.68rem; color: #64748B; font-weight: 600;">STUDIO PRO</div>
+            </div>
         </div>
+        <span style="font-size: 0.68rem; color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 2px 8px; border-radius: 999px; font-weight: 700;">● Active</span>
     </div>
     """, unsafe_allow_html=True)
 
-    col_sb_auth, col_sb_lock = st.columns([3, 2])
-    with col_sb_auth:
-        st.markdown('<div style="font-size:0.75rem; color:#059669; font-weight:700; padding-top:6px;">🟢 Studio Unlocked</div>', unsafe_allow_html=True)
-    with col_sb_lock:
+    col_sb1, col_sb2 = st.columns(2)
+    with col_sb1:
         if st.button("🔒 Lock", help="Lock studio session", use_container_width=True, key="btn_sidebar_lock"):
             st.session_state.studio_authenticated = False
             st.rerun()
+    with col_sb2:
+        if st.button("🔄 Reset", help="Clear all studio state", use_container_width=True, key="btn_sidebar_reset"):
+            for k in list(st.session_state.keys()):
+                if k != "studio_authenticated":
+                    st.session_state.pop(k, None)
+            st.rerun()
 
+    st.write("")
 
-    st.markdown("### 🔑 API Authentication")
-    pixabay_key = st.text_input(
-        "Pixabay API Key",
-        value=DEFAULT_PIXABAY_KEY,
-        type="password",
-        help="Pixabay stock footage key."
-    )
-    if pixabay_key:
-        st.markdown('<span class="chip chip-match">🟢 Pixabay Connected</span>', unsafe_allow_html=True)
-    else:
-        st.markdown('<span class="chip chip-conflict">⚠️ Pixabay Key Required</span>', unsafe_allow_html=True)
-
-    openai_key = st.text_input(
-        "OpenAI API Key (DALL-E Visual Fallback)",
-        value=DEFAULT_OPENAI_KEY,
-        type="password",
-        help="Used to generate custom photorealistic images when Pixabay clips are not found."
-    )
-    if openai_key:
-        st.markdown('<span class="chip chip-ai">✨ OpenAI DALL-E Fallback Active</span>', unsafe_allow_html=True)
-
-    st.markdown("---")
-    st.markdown("### 📐 Video Output Settings")
+    # Core Video Aspect Ratio
     format_choice = st.selectbox(
-        "Resolution & Aspect Ratio",
+        "📐 Aspect Ratio",
         options=[
-            "16:9 Landscape (1920x1080 - YouTube)",
-            "9:16 Portrait (1080x1920 - Shorts/Reels)",
-            "1:1 Square (1080x1080 - Social)"
+            "16:9 Landscape (YouTube)",
+            "9:16 Portrait (Shorts/Reels)",
+            "1:1 Square (Social)"
         ],
         index=0
     )
-    
     if "16:9" in format_choice:
         target_w, target_h = 1920, 1080
         orientation = "horizontal"
@@ -1158,180 +698,129 @@ with st.sidebar:
         target_w, target_h = 1080, 1080
         orientation = "all"
 
-    fit_mode = st.radio(
-        "Framing Mode",
-        options=["cover", "fit"],
-        format_func=lambda x: "Crop & Fill (No black bars)" if x == "cover" else "Fit & Pad (Preserve ratio)",
-        index=0
-    )
-
-    auto_generate_shorts = False
-
-    st.markdown("---")
-    st.markdown("### ⚡ Creator Pacing & Speech Speed")
-    speed_mode = st.selectbox(
-        "Voiceover & Visual Pace",
-        options=[
-            "1.25x Top Creator Fast (Punchy & Viral)",
-            "1.00x Normal Speech (Traditional)",
-            "1.15x Energetic YouTube Pace",
-            "1.35x Hyper Fast Pacing"
-        ],
-        index=0,
-        help="1.25x pace prevents boring robotic pauses and keeps viewers hooked (Top YouTuber standard)."
-    )
-    if "1.25x" in speed_mode:
-        speed_multiplier = 1.25
-        tts_rate_str = "+25%"
-    elif "1.15x" in speed_mode:
-        speed_multiplier = 1.15
-        tts_rate_str = "+15%"
-    elif "1.35x" in speed_mode:
-        speed_multiplier = 1.35
-        tts_rate_str = "+35%"
-    else:
-        speed_multiplier = 1.0
-        tts_rate_str = "+0%"
-
-    st.markdown("---")
-    st.markdown("### 🎙️ Human AI Voiceover")
-    if "enable_voiceover" not in st.session_state:
-        st.session_state.enable_voiceover = True
-    if "selected_voice" not in st.session_state:
-        st.session_state.selected_voice = DEFAULT_VOICE
-
-    active_v_code = st.session_state.get("selected_voice", DEFAULT_VOICE)
-    active_v_name = VOICE_CATALOG.get(active_v_code, active_v_code)
-    st.markdown(f"""
-    <div style="background:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
-        <div style="font-size:0.72rem; color:#166534; font-weight:700;">🟢 ACTIVE SPEECH MODEL ({speed_mode.split(' ')[0]}):</div>
-        <div style="font-size:0.82rem; color:#0F172A; font-weight:600; margin-top:3px; line-height:1.3;">
-            {active_v_name}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.caption("✨ Change voice model & test audio samples in **Step 1 (Main Page)**.")
-
-    st.markdown("---")
-    st.markdown("### ⏱️ Audio-Driven Sync & Transitions")
-    st.markdown("""
-    <div style="background:#EFF6FF; padding:10px 12px; border-radius:8px; border:1px solid #BFDBFE; font-size:0.75rem; color:#1E40AF; margin-bottom:10px; line-height:1.4;">
-        🎯 <strong>Audio-Driven Pacing:</strong> Visual clips & images change strictly according to voice narration length (+ natural pause buffer). No dead silence gaps!
-    </div>
-    """, unsafe_allow_html=True)
-    pause_buffer = st.slider(
-        "Sentence Breath Buffer (s)",
-        min_value=0.10,
-        max_value=0.60,
-        value=0.20,
-        step=0.05,
-        help="Natural breathing space after each line so sentences never feel cut off."
-    )
-    pacing_mode = "audio_driven"
-    default_duration = 3.5
-
-    st.markdown("---")
-    st.markdown("### 🎵 Background Music (BGM)")
+    # Background Music
     bgm_options = list(BGM_CATALOG.keys()) + ["custom_upload"]
     selected_bgm_key = st.selectbox(
-        "Suspense / Cinematic Track",
+        "🎵 Background Music",
         options=bgm_options,
-        format_func=lambda k: "📁 Upload Custom Track (.mp3)" if k == "custom_upload" else BGM_CATALOG.get(k, {}).get("name", k),
+        format_func=lambda k: "📁 Upload Custom (.mp3)" if k == "custom_upload" else BGM_CATALOG.get(k, {}).get("name", k),
         index=0
     )
-
     custom_bgm_file = None
     if selected_bgm_key == "custom_upload":
-        custom_bgm_file = st.file_uploader("Upload MP3 / WAV Music Track", type=["mp3", "wav"])
-    elif selected_bgm_key != "none":
-        bgm_fname = BGM_CATALOG[selected_bgm_key]["filename"]
-        track_local_p = BGM_DIR / bgm_fname
-        if track_local_p.exists():
-            st.caption(f"🎧 Preview ({BGM_CATALOG[selected_bgm_key]['mood']}):")
-            st.audio(str(track_local_p), format="audio/mp3")
+        custom_bgm_file = st.file_uploader("Upload MP3 Track", type=["mp3", "wav"])
 
     bgm_volume = st.slider(
-        "BGM Volume (Ducked under Voice)",
+        "Music Volume",
         min_value=0.02,
         max_value=0.40,
         value=BGM_CATALOG.get(selected_bgm_key, {}).get("default_volume", 0.12),
         step=0.01,
         format="%.2f",
-        disabled=(selected_bgm_key == "none"),
-        help="Keeps voice narration 100% crystal-clear while suspense music sets the mood."
+        disabled=(selected_bgm_key == "none")
     )
 
-    st.markdown("---")
-    st.markdown("### 🖼️ Ken Burns Photo Motion")
-    ken_burns_style = st.selectbox(
-        "Image Zoom / Pan Effect",
-        [
-            "Dynamic Auto (Rotate Zoom & Pan)",
-            "Smooth Zoom In (Center Push)",
-            "Smooth Zoom Out (Reveal)",
-            "Cinematic Pan (Left to Right)",
-            "Cinematic Pan (Right to Left)"
-        ],
-        index=0,
-        help="Cinematic documentary camera movement applied to still photos."
-    )
+    # Advanced Settings in Clean Collapsed Expanders
+    with st.expander("⚡ Pacing & Speech Speed", expanded=False):
+        speed_mode = st.selectbox(
+            "Speech Pace",
+            options=[
+                "1.25x Fast & Punchy (Viral)",
+                "1.00x Normal Speech",
+                "1.15x Energetic YouTube Pace",
+                "1.35x Hyper Fast Pacing"
+            ],
+            index=0
+        )
+        if "1.25x" in speed_mode:
+            speed_multiplier = 1.25
+            tts_rate_str = "+25%"
+        elif "1.15x" in speed_mode:
+            speed_multiplier = 1.15
+            tts_rate_str = "+15%"
+        elif "1.35x" in speed_mode:
+            speed_multiplier = 1.35
+            tts_rate_str = "+35%"
+        else:
+            speed_multiplier = 1.0
+            tts_rate_str = "+0%"
 
-    st.markdown("---")
-    st.markdown("### 🔢 Scene Badges & Subtitles")
-    burn_badge = st.checkbox("Burn Scene Number Badge on Video", value=True)
-    col_b1, col_b2 = st.columns(2)
-    with col_b1:
+        pause_buffer = st.slider(
+            "Pause Buffer (s)",
+            min_value=0.10,
+            max_value=0.60,
+            value=0.20,
+            step=0.05
+        )
+        pacing_mode = "audio_driven"
+        default_duration = 3.5
+        enable_voiceover = True
+
+    with st.expander("🎨 Subtitles, Badges & Framing", expanded=False):
+        burn_subtitles = st.checkbox("Burn Subtitles on Video", value=True)
+        subtitle_style_choice = st.selectbox(
+            "Subtitle Style",
+            [
+                "🔥 Creator Viral (Yellow/White Accent + Stroke)",
+                "🎬 Studio Box (Translucent Dark Banner)",
+                "✨ Minimal Clean (Drop Shadow)"
+            ],
+            index=0
+        )
+        burn_badge = st.checkbox("Burn Scene Number Badge", value=True)
         badge_style = st.selectbox("Badge Style", ["Pill (#01)", "Scene Name (Scene 01)", "Minimal (01)"])
-    with col_b2:
         badge_position = st.selectbox("Badge Position", ["Top Left", "Top Right", "Bottom Left", "Bottom Right"])
+        ken_burns_style = st.selectbox(
+            "Photo Motion Effect",
+            [
+                "Dynamic Auto (Rotate Zoom & Pan)",
+                "Smooth Zoom In (Center Push)",
+                "Smooth Zoom Out (Reveal)",
+                "Cinematic Pan (Left to Right)",
+                "Cinematic Pan (Right to Left)"
+            ],
+            index=0
+        )
+        fit_mode = st.radio(
+            "Framing Mode",
+            options=["cover", "fit"],
+            format_func=lambda x: "Crop & Fill (No black bars)" if x == "cover" else "Fit & Pad",
+            index=0
+        )
 
-    burn_subtitles = st.checkbox("Burn Script Subtitles on Video", value=True)
-    subtitle_style_choice = st.selectbox(
-        "Subtitle Aesthetic Style",
-        [
-            "🔥 Creator Viral (Yellow/White Accent + Stroke)",
-            "🎬 Studio Box (Translucent Dark Banner)",
-            "✨ Minimal Clean (Drop Shadow)"
-        ],
-        index=0,
-        help="Top YouTubers use Creator Viral with bold yellow trigger words for max retention."
-    )
+    with st.expander("🔑 API Credentials", expanded=False):
+        pixabay_key = st.text_input(
+            "Pixabay API Key",
+            value=DEFAULT_PIXABAY_KEY,
+            type="password"
+        )
+        openai_key = st.text_input(
+            "OpenAI API Key (DALL-E Visual Fallback)",
+            value=DEFAULT_OPENAI_KEY,
+            type="password"
+        )
 
-    st.markdown("---")
-    st.markdown("""
-    <div style="background:#F1F5F9; padding:10px 12px; border-radius:8px; border:1px solid #E2E8F0; font-size:0.75rem; color:#475569;">
-        <strong style="color:#2563EB;">⚡ Engine:</strong> Top Creator 1.25x Studio Pipeline · FFmpeg 7.1 H.264 · Ken Burns Zoom
-    </div>
-    """, unsafe_allow_html=True)
-
-# --- MAIN APP HEADER ---
+# --- MINIMALIST CLEAN HEADER ---
 st.markdown("""
-<div class="hero-container">
-    <div class="hero-pill">⚡ INVIDEO AI STUDIO ENGINE · LIGHT THEME EDITION</div>
-    <h1 class="hero-title">AI Script-to-Video Studio</h1>
-    <p class="hero-desc">
-        Create professional InVideo-grade videos from any script. Scenario-based stock matching, 
-        automatic 60% video / 40% photo mix, dynamic speech-paced durations, and OpenAI DALL-E fallback generation.
-    </p>
-    <div class="hero-chips">
-        <span class="hero-chip">🎯 Scenario-Wise Context Search</span>
-        <span class="hero-chip">🎥 60% Video / 40% Image Mix</span>
-        <span class="hero-chip">⏱️ Dynamic Content-Dependent Pacing</span>
-        <span class="hero-chip">✨ OpenAI DALL-E Image Fallback</span>
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0 16px 0; border-bottom: 1px solid #E2E8F0; margin-bottom: 20px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 1.5rem;">🎬</span>
+        <div>
+            <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; letter-spacing: -0.02em; line-height: 1.2;">
+                VideoCraft Studio
+            </div>
+            <div style="font-size: 0.76rem; color: #64748B;">
+                AI Script-to-Video Engine
+            </div>
+        </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.72rem; font-weight: 700; color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 3px 10px; border-radius: 999px;">
+            ● Ready
+        </span>
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-# Determine current pipeline stage for visual stepper
-current_stage = 1
-if st.session_state.get("merged_video"):
-    current_stage = 5
-elif st.session_state.get("scene_assets"):
-    current_stage = 3
-elif st.session_state.get("parsed_scenes"):
-    current_stage = 2
-
-render_pipeline_stepper(current_stage)
 
 # Voice Model Selection Modal Dialog
 if hasattr(st, "dialog"):
@@ -1796,138 +1285,162 @@ def run_full_auto_video_pipeline(
     }
 
 # Main Studio Tabs
-tab1, tab2 = st.tabs(["📝 Script to Merged Video Studio", "📊 CSV Batch Asset Finder"])
+tab1, tab2 = st.tabs(["🎬 Script to Video", "📊 CSV Batch"])
 
-# =====================================================================
-# TAB 1: SCRIPT TO MERGED VIDEO STUDIO
-# =====================================================================
 with tab1:
-    # STEP 1: Input Script & Storyboard
-    st.markdown("""
-    <div class="section-title">
-        <span>Step 1: Input Script & Storyboard</span>
-        <span class="section-badge">Script Engine</span>
-    </div>
-    """, unsafe_allow_html=True)
+    has_merged = bool(st.session_state.get("merged_video"))
 
-    # AI Creator Viral Script & Shorts Generator Tool
-    with st.expander("🔥 AI Top Creator Viral Script & Shorts Generator (Instant Hooks)", expanded=False):
-        st.markdown("""
-        <div style="font-size:0.86rem; color:#475569; margin-bottom:12px; line-height:1.4;">
-            Type any video topic or niche. The AI will create a <strong>high-retention Long Script with a psychological hook</strong>, 
-            plus <strong>4 distinct YouTube Shorts scripts</strong> with extreme swipe-stopping hooks!
-        </div>
-        """, unsafe_allow_html=True)
-        col_gen1, col_gen2 = st.columns([3, 1])
-        with col_gen1:
-            creator_topic_input = st.text_input(
-                "Enter Video Topic / Idea:",
-                value=st.session_state.get("current_topic", ""),
-                placeholder="e.g., Dark Secrets of the Pyramids, Why 99% Fail at AI, Psychology of Money, Lost City of Atlantis",
-                key="input_creator_topic"
-            )
-        with col_gen2:
-            creator_lang = st.selectbox("Language / Style:", ["🇮🇳 Hinglish / Hindi (Viral)", "🇺🇸 English (Creator Documentary)"], index=0)
+    # =====================================================================
+    # 🎬 FINAL VIDEO EXPORT (CLEAN, PROMINENT AT TOP)
+    # =====================================================================
+    if has_merged:
+        merged_path = Path(st.session_state.merged_video)
+        if merged_path.exists():
+            active_topic_raw = st.session_state.get("custom_main_topic") or ""
+            if not active_topic_raw and st.session_state.get("youtube_seo_kit"):
+                titles_list = st.session_state["youtube_seo_kit"].get("titles", [])
+                if titles_list:
+                    active_topic_raw = titles_list[0]
+            if not active_topic_raw:
+                cur_scenes = st.session_state.get("parsed_scenes", [])
+                active_topic_raw = st.session_state.get("current_topic") or (cur_scenes[0].get('keyword') if cur_scenes else "YouTube_Video")
 
-        if st.button("🚀 Generate Viral Script + 4 Triggering Shorts Hooks", type="primary", use_container_width=True, key="btn_gen_creator_script"):
-            if not creator_topic_input.strip():
-                st.warning("Please type a topic first.")
-            else:
-                with st.spinner("⚡ Crafting high-retention Creator script & 4 Shorts hooks..."):
-                    lang_str = "Hinglish" if "Hinglish" in creator_lang else "English"
-                    gen_res = generate_creator_scripts_and_shorts(creator_topic_input, language=lang_str, openai_key=openai_key)
-                    st.session_state.generated_creator_pack = gen_res
-                    st.session_state.current_topic = gen_res["topic"]
-                    st.session_state.active_script_content = gen_res["long_script"]
-                    st.session_state.creator_shorts_drafts = gen_res["shorts"]
-                    st.success(f"🎉 Generated Viral Long Script + 4 Triggering Shorts Hooks for '{creator_topic_input}'!")
+            topic_slug = slugify(active_topic_raw)
+            file_mb = round(merged_path.stat().st_size / (1024 * 1024), 2)
+            scenes_count = len(st.session_state.get("parsed_scenes", []))
+            actual_dur = get_audio_duration(merged_path)
+
+            st.markdown(f"""
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:12px 18px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:1.1rem; font-weight:800; color:#0F172A;">🎬 Final Video Preview</span>
+                    <span style="background:#ECFDF5; color:#059669; font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid #A7F3D0;">● Ready</span>
+                </div>
+                <div style="font-size:0.8rem; color:#64748B; font-weight:600;">
+                    {scenes_count} Scenes · {actual_dur:.1f}s Runtime · {target_w}x{target_h} · {file_mb} MB
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Embedded Video Player
+            st.video(str(merged_path))
+
+            # Action Buttons Row
+            st.write("")
+            dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 1.5])
+            with dl_col1:
+                with open(merged_path, "rb") as vf:
+                    st.download_button(
+                        label=f"⬇️ Download Video ({topic_slug}_Video.mp4)",
+                        data=vf,
+                        file_name=f"{topic_slug}_Video.mp4",
+                        mime="video/mp4",
+                        type="primary",
+                        use_container_width=True
+                    )
+            with dl_col2:
+                if st.session_state.get("assets_zip"):
+                    zip_p = Path(st.session_state.assets_zip)
+                    if zip_p.exists():
+                        with open(zip_p, "rb") as zf:
+                            st.download_button(
+                                label="📦 Download Archive ZIP",
+                                data=zf,
+                                file_name=f"{topic_slug}_Assets.zip",
+                                mime="application/zip",
+                                use_container_width=True
+                            )
+            with dl_col3:
+                if st.button("✨ New Video", use_container_width=True, help="Clear and create a fresh video"):
+                    for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
+                        st.session_state.pop(k, None)
                     st.rerun()
 
-        if st.session_state.get("generated_creator_pack"):
-            pack = st.session_state.generated_creator_pack
-            st.markdown(f"**🎯 Active Topic:** `{pack.get('topic', '')}` · <span class='chip chip-match'>✅ Script Loaded into Editor Below</span>", unsafe_allow_html=True)
-            st.markdown("##### 📱 4 Generated YouTube Shorts Hooks (Ready to Render):")
-            sh_cols = st.columns(4)
-            for s_idx, sh in enumerate(pack.get("shorts", [])[:4]):
-                with sh_cols[s_idx]:
-                    st.markdown(f"""
-                    <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:10px; font-size:0.78rem; height:100%;">
-                        <div style="font-weight:700; color:#2563EB; margin-bottom:3px;">{sh.get('title', f'Short #{s_idx+1}')}</div>
-                        <div style="font-size:0.72rem; color:#059669; font-weight:600; margin-bottom:5px;">{sh.get('hook_type', 'Hook')}</div>
-                        <div style="color:#475569; font-style:italic; line-height:1.3;">"{sh.get('script', '')[:105]}..."</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+            # YouTube SEO Kit in an unobtrusive expander
+            active_niche_k = st.session_state.get("selected_niche", "history")
+            active_top = st.session_state.get("custom_main_topic") or (st.session_state.get("parsed_scenes", [{}])[0].get('keyword') if st.session_state.get("parsed_scenes") else "Ancient Mysteries")
+            if not st.session_state.get("youtube_seo_kit"):
+                st.session_state.youtube_seo_kit = generate_youtube_seo_kit(
+                    topic=active_top,
+                    script_text=st.session_state.get("active_script_content", ""),
+                    scenes=st.session_state.get("parsed_scenes", []),
+                    niche_key=active_niche_k
+                )
+            seo_kit = st.session_state.get("youtube_seo_kit", {})
 
-    # -------------------------------------------------------------
-    # 🎛️ MASTER FACELESS CHANNEL NICHE ENGINE
-    # -------------------------------------------------------------
+            with st.expander("🚀 YouTube SEO Kit (Titles, Tags & Description with Chapters)", expanded=False):
+                col_titles_box, col_tags_box = st.columns(2)
+                with col_titles_box:
+                    st.markdown("##### 🎯 3 Clickbait Titles:")
+                    for t_idx, t_str in enumerate(seo_kit.get("titles", []), start=1):
+                        st.markdown(f"**#{t_idx}** {t_str}")
+                with col_tags_box:
+                    st.markdown("##### 🏷️ 28-30 Viral Tags:")
+                    st.code(seo_kit.get("tags", ""), language="text")
+
+                st.markdown("##### 📝 Full Description (Auto Timestamps & Chapters):")
+                st.code(seo_kit.get("description", ""), language="markdown")
+
+                seo_txt_content = f"""======================================================================
+YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
+======================================================================
+
+🎯 CLICKBAIT TITLES:
+1. {seo_kit.get('titles', [''])[0] if seo_kit.get('titles') else ''}
+2. {seo_kit.get('titles', ['', ''])[1] if len(seo_kit.get('titles', [])) > 1 else ''}
+3. {seo_kit.get('titles', ['', '', ''])[2] if len(seo_kit.get('titles', [])) > 2 else ''}
+
+======================================================================
+📝 FULL DESCRIPTION:
+======================================================================
+{seo_kit.get('description', '')}
+
+======================================================================
+🏷️ VIRAL TAGS:
+======================================================================
+{seo_kit.get('tags', '')}
+
+======================================================================
+💬 PINNED COMMENT:
+======================================================================
+{seo_kit.get('pinned_comment', '')}
+======================================================================
+"""
+                st.download_button(
+                    label=f"📄 Download Complete YouTube SEO Kit ({topic_slug}_YouTube_SEO.txt)",
+                    data=seo_txt_content,
+                    file_name=f"{topic_slug}_YouTube_SEO.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+
+            st.markdown("<hr style='margin: 22px 0 18px 0; border: none; border-top: 1px solid #E2E8F0;'/>", unsafe_allow_html=True)
+
+    # =====================================================================
+    # 📝 MINIMALIST SCRIPT COMPOSER & CONTROLS
+    # =====================================================================
+    active_niche_k = st.session_state.get("selected_niche", "history")
     niche_keys = list(NICHE_CATALOG.keys())
-    cur_niche_k = st.session_state.get("selected_niche", "history")
-    cur_niche_idx = niche_keys.index(cur_niche_k) if cur_niche_k in niche_keys else 0
-
-    col_niche_sel, col_niche_badge = st.columns([3, 2])
-    with col_niche_sel:
-        selected_niche_name = st.selectbox(
-            "🎛️ Master YouTube Faceless Niche Mode:",
-            options=[NICHE_CATALOG[k]["name"] for k in niche_keys],
-            index=cur_niche_idx,
-            help="Switches visual search bias, cinematic BGM, voice speed, and presets to this exact YouTube niche!"
-        )
-        for k, v in NICHE_CATALOG.items():
-            if v["name"] == selected_niche_name:
-                active_niche_k = k
-                break
-        else:
-            active_niche_k = "history"
-
-        if st.session_state.get("selected_niche") != active_niche_k:
-            st.session_state.selected_niche = active_niche_k
-            st.rerun()
-
     active_niche_data = NICHE_CATALOG.get(active_niche_k, NICHE_CATALOG["history"])
-
-    with col_niche_badge:
-        st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-radius:10px; padding:8px 14px; margin-top:2px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
-                <span style="font-size:0.75rem; font-weight:700; color:#64748B;">ACTIVE ENGINE:</span>
-                <span style="font-size:0.72rem; font-weight:800; background:{active_niche_data.get('accent_color', '#F59E0B')}20; color:{active_niche_data.get('badge_color', '#D97706')}; padding:2px 8px; border-radius:6px; border:1px solid {active_niche_data.get('accent_color', '#F59E0B')}50;">
-                    {active_niche_data.get('badge', 'MASTER')}
-                </span>
-            </div>
-            <div style="font-size:0.74rem; color:#334155;">
-                🎵 <strong>BGM:</strong> {active_niche_data.get('default_bgm', 'Stormfront')} · ⚡ <strong>Pace:</strong> {active_niche_data.get('speed_mode', '1.25x').split(' ')[0]}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Studio Controls Toolbar: Topic Anchor, Story Presets, Reset
-    col_top1, col_top2, col_top3 = st.columns([2.2, 2.2, 1.2])
-    with col_top1:
-        main_topic_input = st.text_input(
-            "🎯 Main Video Topic (Hook Focus):",
-            value=st.session_state.get("custom_main_topic", ""),
-            placeholder=f"e.g., {active_niche_data['thumbnail_hooks'][0].title()}...",
-            help="Anchor Scene 1 opening visual strictly to this topic so it showcases a high-impact Hero visual!"
-        )
-        st.session_state.custom_main_topic = main_topic_input
-
     niche_presets_dict = active_niche_data.get("presets", {})
     all_preset_options = ["(Custom Script)", *list(niche_presets_dict.keys()), *list(SAMPLE_PRESETS.keys())]
 
+    # Compact Top Row: Topic Anchor & Story Presets
+    col_top1, col_top2 = st.columns([3, 2])
+    with col_top1:
+        main_topic_input = st.text_input(
+            "Video Topic",
+            value=st.session_state.get("custom_main_topic", ""),
+            placeholder="Topic (e.g. Lost Secrets of Egypt, Wealth Psychology...)",
+            label_visibility="collapsed"
+        )
+        st.session_state.custom_main_topic = main_topic_input
     with col_top2:
         preset_choice = st.selectbox(
-            "💡 Load Story Preset / Template:",
+            "Load Story Preset",
             all_preset_options,
-            help="Choose an inspirational story preset or compose your own script below."
+            label_visibility="collapsed"
         )
-
-    with col_top3:
-        st.write("")
-        if st.button("🔄 Reset", use_container_width=True, help="Clear script and restart"):
-            for k in ["parsed_scenes", "scene_assets", "selected_assets", "merged_video", "assets_zip", "active_script_content", "creator_shorts_drafts", "generated_shorts_list", "generated_creator_pack", "custom_main_topic", "youtube_seo_kit", "youtube_thumbnail"]:
-                st.session_state.pop(k, None)
-            st.rerun()
 
     if preset_choice != "(Custom Script)":
         if preset_choice in niche_presets_dict:
@@ -1943,135 +1456,93 @@ with tab1:
     word_count = len(curr_script_preview.split())
     est_dur = round(word_count / 2.3, 1) if word_count > 0 else 0.0
 
-    stat_badge_text = f"📊 {line_count} Scenes · {word_count} Words · ~{est_dur}s Est. Runtime" if line_count > 0 else "⚡ 1 Line = 1 Numbered Scene"
-
-    # Studio Script Editor Card
     st.markdown(f"""
-    <div class="script-editor-card">
-        <div class="script-editor-header">
-            <div class="script-editor-title">
-                <span class="script-editor-icon">📝</span>
-                <div>
-                    <div class="script-editor-heading">Studio Script & Storyboard Composer</div>
-                    <div class="script-editor-subheading">Type or paste your narrative. Every sentence or line becomes an AI scene with matched footage & voiceover.</div>
-                </div>
-            </div>
-            <div class="script-live-stats">
-                <span class="script-stat-chip active">{stat_badge_text}</span>
-            </div>
-        </div>
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; margin-bottom: 4px;">
+        <span style="font-size: 0.78rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Script (1 Line = 1 Scene)</span>
+        <span style="font-size: 0.76rem; font-weight: 600; color: #64748B;">{f'{line_count} Scenes · ~{est_dur}s Runtime' if line_count > 0 else ''}</span>
+    </div>
     """, unsafe_allow_html=True)
 
+    # Minimalist clean script text area
     script_input = st.text_area(
         "Script Content",
         value=initial_script,
-        height=260,
-        placeholder="Enter your script here line by line... Example:\nThousands of years ago, majestic stone pyramids rose against the golden Egyptian desert.\nSkilled craftsmen and workers carved colossal limestone blocks under the blazing sun.\nMysterious hieroglyphs decorated the inner chambers of ancient pharaoh tombs.\nToday, these ancient monuments still hold untold secrets waiting to be uncovered.",
+        height=170,
+        placeholder="Type or paste your script line by line...\nEach line automatically gets matched 1080p footage, photo motion, and synced human voice narration.",
         label_visibility="collapsed"
     )
 
-    st.markdown("""
-        <div class="script-editor-footer">
-            <div>💡 <strong>Pro Creator Tip:</strong> Press Enter between lines to split scenes. Each line gets custom 1080p footage, automatic Ken Burns photo motion, and synced human voiceover.</div>
-            <div>🔒 <strong>Topic Anchor:</strong> Scene 1 strictly locked to your main topic.</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 🎙️ Voice & Speech Narrator (Main Page Studio Controls)
-    curr_voice_key = st.session_state.get("selected_voice", DEFAULT_VOICE)
-    curr_voice_label = VOICE_CATALOG.get(curr_voice_key, curr_voice_key)
-
-    st.markdown(f"""
-    <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px 20px; margin-top:14px; margin-bottom:14px; box-shadow:0 1px 4px rgba(0,0,0,0.03);">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-            <div style="font-size:0.95rem; font-weight:700; color:#0F172A; display:flex; align-items:center; gap:8px;">
-                <span>🎙️ Script Speech Engine & Voice Model</span>
-                <span style="font-size:0.72rem; font-weight:600; background:#E0F2FE; color:#0284C7; padding:2px 8px; border-radius:999px;">AI Voice Studio</span>
-                <span style="font-size:0.72rem; font-weight:700; background:#FEF3C7; color:#B45309; padding:2px 8px; border-radius:999px;">⚡ {speed_mode.split(' ')[0]} Speed</span>
-            </div>
-            <div style="font-size:0.8rem; font-weight:700; color:#047857; background:#ECFDF5; padding:3px 12px; border-radius:999px; border:1px solid #A7F3D0;">
-                🟢 Active Model: {curr_voice_label.split('(')[0].strip()}
-            </div>
-        </div>
-        <div style="font-size:0.78rem; color:#64748B;">
-            Each line in your script will be naturally spoken out loud using this AI voice model at {speed_mode.split(' ')[0]} speed, with footage timed directly to speech length.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_v1, col_v2 = st.columns([1, 2.2])
-    with col_v1:
-        enable_vo_main = st.checkbox(
-            "🎙️ Voice Narration",
-            value=st.session_state.get("enable_voiceover", True),
-            key="main_enable_voiceover",
-            help="Speaks your script out loud with natural human AI narration."
-        )
-        st.session_state.enable_voiceover = enable_vo_main
-        enable_voiceover = enable_vo_main
-
-    with col_v2:
+    # Clean 1-Row Controls Bar: Voice, Channel Style, Footage Mix
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1:
         voice_keys = list(VOICE_CATALOG.keys())
         curr_v = st.session_state.get("selected_voice", DEFAULT_VOICE)
         idx_v = voice_keys.index(curr_v) if curr_v in voice_keys else 0
-        sel_v_main = st.selectbox(
-            "Speech Model / Voice Artist",
+        selected_voice = st.selectbox(
+            "🎙️ Voice Narrator",
             options=voice_keys,
-            format_func=lambda k: VOICE_CATALOG.get(k, k),
-            index=idx_v,
-            key="main_selected_voice",
-            disabled=not enable_voiceover,
-            help="Choose Hindi (Madhur / Swara) or English (Christopher / Jenny / Guy / Aria / Ryan)."
+            format_func=lambda k: VOICE_CATALOG.get(k, k).split('(')[0].strip(),
+            index=idx_v
         )
-        st.session_state.selected_voice = sel_v_main
-        selected_voice = sel_v_main
+        st.session_state.selected_voice = selected_voice
 
-    col_v3, col_v4 = st.columns(2)
-    with col_v3:
-        if st.button("🎧 Test Voice Sample", key="btn_sample_voice", use_container_width=True, disabled=not enable_voiceover):
-            sample_audio_file = DOWNLOADS_DIR / f"sample_{selected_voice}.mp3"
-            test_phrase = "Namaste dosto. Yeh voiceover aapke YouTube video ke liye ready hai." if "hi-IN" in selected_voice else "Hello creator. This realistic human voiceover is ready for your YouTube video."
-            with st.spinner("Synthesizing audio sample..."):
-                dur = generate_human_voiceover(test_phrase, sample_audio_file, voice=selected_voice, rate=tts_rate_str)
-                if sample_audio_file.exists():
-                    st.audio(str(sample_audio_file), format="audio/mp3")
+    with col_c2:
+        cur_niche_idx = niche_keys.index(active_niche_k) if active_niche_k in niche_keys else 0
+        selected_niche_name = st.selectbox(
+            "🎛️ Channel Style",
+            options=[NICHE_CATALOG[k]["name"] for k in niche_keys],
+            index=cur_niche_idx
+        )
+        for k, v in NICHE_CATALOG.items():
+            if v["name"] == selected_niche_name:
+                active_niche_k = k
+                break
+        if st.session_state.get("selected_niche") != active_niche_k:
+            st.session_state.selected_niche = active_niche_k
+            st.rerun()
 
-    with col_v4:
-        if st.button("🪟 Open Voice Library", key="btn_open_voice_modal", use_container_width=True, help="Open full Voice Narrator modal dialog"):
-            open_voice_selection_dialog()
-
-    col_media_type, col_blank = st.columns([2, 2])
-    with col_media_type:
+    with col_c3:
         global_media_pref = st.selectbox(
-            "Visual Media Distribution Mix",
+            "🎥 Footage Mix",
             ["invideo_mix", "both", "video", "image"],
             format_func=lambda x: {
-                "invideo_mix": "🎯 Smart InVideo Mix (60% Videos, 40% Photos)",
-                "both": "🎬 Best Available (Both Videos & Images)",
+                "invideo_mix": "🎯 Smart 60% Video / 40% Photo",
+                "both": "🎬 Best Available",
                 "video": "🎥 Videos Only",
-                "image": "📸 Images / Photos Only"
-            }.get(x, x),
-            help="60% Videos / 40% Images follows high-retention InVideo AI documentary standards."
+                "image": "📸 Photos Only"
+            }.get(x, x)
         )
 
-    # 🚀 PRIMARY STUDIO ACTION CONTROLS
+    # Primary 1-Click Action Button
     st.write("")
-    col_btn_gen, col_btn_parse = st.columns([3, 2])
-    with col_btn_gen:
-        trigger_1click = st.button(
-            "🚀 1-Click Generate & Download Video",
-            type="primary",
-            use_container_width=True,
-            help="Finds best 1080p clips automatically in background, synthesizes voiceover, renders, and produces final video immediately!"
-        )
-    with col_btn_parse:
-        trigger_parse = st.button(
-            "📝 Parse Storyboard Only (Manual Edit)",
-            type="secondary",
-            use_container_width=True,
-            help="Review & edit individual scene keywords or timings before rendering."
-        )
+    trigger_1click = st.button(
+        "🚀 Generate Video (1-Click)",
+        type="primary",
+        use_container_width=True,
+        help="Automatically finds best 1080p clips, adds voiceover & music, and builds complete video."
+    )
+
+    # Optional AI Script Generator (Tucked away in subtle expander)
+    with st.expander("✨ Need an AI Script? Generate Topic & Script Here", expanded=False):
+        col_gen1, col_gen2 = st.columns([3, 1])
+        with col_gen1:
+            creator_topic_input = st.text_input("Enter Topic / Idea:", value=st.session_state.get("current_topic", ""), placeholder="e.g. Lost City of Atlantis, Psychology of Money...")
+        with col_gen2:
+            creator_lang = st.selectbox("Language / Style:", ["🇮🇳 Hinglish / Hindi (Viral)", "🇺🇸 English (Documentary)"], index=0)
+
+        if st.button("✨ Write Script with AI", use_container_width=True, key="btn_gen_creator_script"):
+            if not creator_topic_input.strip():
+                st.warning("Please type a topic first.")
+            else:
+                with st.spinner("⚡ Writing high-retention script..."):
+                    lang_str = "Hinglish" if "Hinglish" in creator_lang else "English"
+                    gen_res = generate_creator_scripts_and_shorts(creator_topic_input, language=lang_str, openai_key=openai_key)
+                    st.session_state.generated_creator_pack = gen_res
+                    st.session_state.current_topic = gen_res["topic"]
+                    st.session_state.active_script_content = gen_res["long_script"]
+                    st.session_state.creator_shorts_drafts = gen_res["shorts"]
+                    st.success("✅ Script generated and loaded into editor above!")
+                    st.rerun()
 
     if trigger_1click:
         if not script_input.strip():
@@ -2120,212 +1591,30 @@ with tab1:
                 st.session_state.custom_main_topic = main_topic_input
                 st.rerun()
 
-    if trigger_parse:
-        if not script_input.strip():
-            st.warning("Please enter or select a script first.")
-        else:
-            scenes = parse_script_to_scenes(
-                script_input,
-                default_duration=default_duration,
-                default_media=global_media_pref,
-                speed=speed_multiplier,
-                main_topic=main_topic_input
-            )
-            st.session_state.parsed_scenes = scenes
-            st.session_state.scene_assets = {}
-            st.session_state.selected_assets = {}
-            st.session_state.pop("merged_video", None)
-            st.session_state.pop("assets_zip", None)
-            st.success(f"🎉 Generated {len(scenes)} scenes with scenario keywords and {speed_mode.split(' ')[0]} dynamic durations!")
-            st.rerun()
-
-    # =====================================================================
-    # STEP 5: VIDEO PLAYER & DOWNLOADS (SHOWN PROMINENTLY ONCE GENERATED)
-    # =====================================================================
-    has_merged = bool(st.session_state.get("merged_video"))
-    if has_merged:
-        merged_path = Path(st.session_state.merged_video)
-        if merged_path.exists():
-            st.markdown("""
-            <div style="margin-top: 28px;"></div>
-            <div class="section-title">
-                <span>Step 2: Preview & Download Final Video</span>
-                <span class="section-badge" style="background:#ECFDF5; color:#059669; border-color:#A7F3D0;">🎉 100% Production Ready</span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Embedded Video Player
-            st.video(str(merged_path))
-
-            # Video Info Metrics
-            file_mb = round(merged_path.stat().st_size / (1024 * 1024), 2)
-            scenes_count = len(st.session_state.get("parsed_scenes", []))
-            actual_dur = get_audio_duration(merged_path)
-
-            st.write("")
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.markdown(f"""
-                <div class="metric-card-box">
-                    <div class="metric-card-label">🎬 Total Scenes</div>
-                    <div class="metric-card-val">{scenes_count}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with m2:
-                st.markdown(f"""
-                <div class="metric-card-box">
-                    <div class="metric-card-label">⏱️ Total Runtime</div>
-                    <div class="metric-card-val">{actual_dur:.1f}s</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with m3:
-                st.markdown(f"""
-                <div class="metric-card-box">
-                    <div class="metric-card-label">📐 Resolution</div>
-                    <div class="metric-card-val" style="font-size:1.35rem;">{target_w}x{target_h}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with m4:
-                st.markdown(f"""
-                <div class="metric-card-box">
-                    <div class="metric-card-label">💾 File Size</div>
-                    <div class="metric-card-val">{file_mb} MB</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            active_topic_raw = st.session_state.get("custom_main_topic") or ""
-            if not active_topic_raw and st.session_state.get("youtube_seo_kit"):
-                titles_list = st.session_state["youtube_seo_kit"].get("titles", [])
-                if titles_list:
-                    active_topic_raw = titles_list[0]
-            if not active_topic_raw:
-                cur_scenes = st.session_state.get("parsed_scenes", [])
-                active_topic_raw = st.session_state.get("current_topic") or (cur_scenes[0].get('keyword') if cur_scenes else "YouTube_Video")
-
-            topic_slug = slugify(active_topic_raw)
-
-            # Download & Action Buttons
-            st.write("")
-            dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 2])
-            with dl_col1:
-                with open(merged_path, "rb") as vf:
-                    st.download_button(
-                        label=f"⬇️ Download Video ({topic_slug}_Video.mp4)",
-                        data=vf,
-                        file_name=f"{topic_slug}_Video.mp4",
-                        mime="video/mp4",
-                        type="primary",
-                        use_container_width=True
-                    )
-            with dl_col2:
-                if st.session_state.get("assets_zip"):
-                    zip_p = Path(st.session_state.assets_zip)
-                    if zip_p.exists():
-                        with open(zip_p, "rb") as zf:
-                            st.download_button(
-                                label=f"📦 Download Archive ZIP",
-                                data=zf,
-                                file_name=f"{topic_slug}_Clips_and_Audio.zip",
-                                mime="application/zip",
-                                use_container_width=True
-                            )
-            with dl_col3:
-                if st.button("✨ Create Another Video", use_container_width=True, help="Clear and start a fresh script"):
-                    for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
-                        st.session_state.pop(k, None)
-                    st.rerun()
-
-            # -------------------------------------------------------------
-            # 🚀 YOUTUBE STUDIO UPLOAD & GROWTH KIT
-            # -------------------------------------------------------------
-            st.markdown("""
-            <div style="margin-top: 36px;"></div>
-            <div class="section-title">
-                <span>🚀 YouTube Studio Upload & Growth Kit</span>
-                <span class="section-badge">1-Click Channel Automation</span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            active_niche_k = st.session_state.get("selected_niche", "history")
-            active_top = st.session_state.get("custom_main_topic") or (st.session_state.get("parsed_scenes", [{}])[0].get('keyword') if st.session_state.get("parsed_scenes") else "Ancient Mysteries")
-
-            if not st.session_state.get("youtube_seo_kit"):
-                st.session_state.youtube_seo_kit = generate_youtube_seo_kit(
-                    topic=active_top,
-                    script_text=st.session_state.get("active_script_content", script_input),
-                    scenes=st.session_state.get("parsed_scenes", []),
-                    niche_key=active_niche_k
-                )
-
-            seo_kit = st.session_state.get("youtube_seo_kit", {})
-
-            col_titles_box, col_tags_box = st.columns([1, 1])
-            with col_titles_box:
-                st.markdown("##### 🎯 3 High-CTR Curiosity Titles")
-                for t_idx, t_str in enumerate(seo_kit.get("titles", []), start=1):
-                    st.markdown(f"""
-                    <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-left:3px solid #2563EB; border-radius:8px; padding:8px 12px; margin-bottom:8px; font-size:0.86rem; font-weight:700; color:#0F172A;">
-                        <span style="color:#2563EB; font-weight:800;">#{t_idx}</span> {t_str}
-                    </div>
-                    """, unsafe_allow_html=True)
-
-            with col_tags_box:
-                st.markdown("##### 🏷️ 28-30 Viral Ranking Tags (Click to Copy)")
-                st.code(seo_kit.get("tags", ""), language="text")
-                st.caption("📋 Click the copy icon in top-right of box to paste directly into YouTube Studio Tag Box!")
-
-            st.write("")
-            with st.expander("📝 Full YouTube Description with Auto Timestamps & Chapters", expanded=True):
-                st.code(seo_kit.get("description", ""), language="markdown")
-                st.caption("📋 Generated dynamically from your video script. Paste directly into your YouTube video description.")
-
-            seo_txt_content = f"""======================================================================
-YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
-======================================================================
-
-🎯 CLICKBAIT TITLES (CHOOSE ONE):
-1. {seo_kit.get('titles', [''])[0] if seo_kit.get('titles') else ''}
-2. {seo_kit.get('titles', ['', ''])[1] if len(seo_kit.get('titles', [])) > 1 else ''}
-3. {seo_kit.get('titles', ['', '', ''])[2] if len(seo_kit.get('titles', [])) > 2 else ''}
-
-======================================================================
-📝 FULL DESCRIPTION (COPY-PASTE WITH TIMESTAMPS / CHAPTERS):
-======================================================================
-{seo_kit.get('description', '')}
-
-======================================================================
-🏷️ VIRAL TAGS (PASTE INTO YOUTUBE STUDIO TAG BOX):
-======================================================================
-{seo_kit.get('tags', '')}
-
-======================================================================
-💬 VIRAL PINNED COMMENT:
-======================================================================
-{seo_kit.get('pinned_comment', '')}
-======================================================================
-"""
-            st.download_button(
-                label=f"📄 Download Complete YouTube SEO Kit ({topic_slug}_YouTube_SEO.txt)",
-                data=seo_txt_content,
-                file_name=f"{topic_slug}_YouTube_SEO.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
-
-            st.markdown(f"""
-            <div style="background:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; padding:10px 14px; margin-top:8px; margin-bottom:18px;">
-                <div style="font-size:0.75rem; font-weight:700; color:#166534; text-transform:uppercase;">💬 Viral Pinned Comment Prompt (Ask Audience):</div>
-                <div style="font-size:0.86rem; font-weight:600; color:#0F172A; margin-top:2px;">{seo_kit.get('pinned_comment', '')}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # =====================================================================
-    # ADVANCED EXPANDER: REVIEW STORYBOARD & SCENE CLIPS (OPTIONAL / COLLAPSED BY DEFAULT)
-    # =====================================================================
+    # Optional Storyboard Review expander
     has_parsed = bool(st.session_state.get("parsed_scenes"))
-    if has_parsed:
-        with st.expander("🛠️ Advanced: Review Storyboard & Scene Clips (Optional)", expanded=(has_parsed and not has_merged)):
+    with st.expander("🛠️ Advanced: Review Storyboard & Keywords (Optional)", expanded=(has_parsed and not has_merged)):
+        if not has_parsed:
+            st.caption("Inspect and tweak individual scene keywords and durations before rendering.")
+            if st.button("📝 Parse Script into Storyboard", key="btn_parse_storyboard", use_container_width=True):
+                if not script_input.strip():
+                    st.warning("Please enter or select a script first.")
+                else:
+                    scenes = parse_script_to_scenes(
+                        script_input,
+                        default_duration=default_duration,
+                        default_media=global_media_pref,
+                        speed=speed_multiplier,
+                        main_topic=main_topic_input
+                    )
+                    st.session_state.parsed_scenes = scenes
+                    st.session_state.scene_assets = {}
+                    st.session_state.selected_assets = {}
+                    st.session_state.pop("merged_video", None)
+                    st.session_state.pop("assets_zip", None)
+                    st.success(f"🎉 Generated {len(scenes)} scenes with scenario keywords and dynamic durations!")
+                    st.rerun()
+        else:
             scenes = st.session_state.parsed_scenes
             total_est_dur = sum([float(s.get('duration', default_duration)) for s in scenes])
 
