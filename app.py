@@ -1031,6 +1031,69 @@ def render_pipeline_stepper(current_stage: int):
     html_parts.append('</div>')
     st.markdown("".join(html_parts), unsafe_allow_html=True)
 
+# -------------------------------------------------------------
+# 🔒 STUDIO SECURITY & PIN ACCESS CONTROL
+# -------------------------------------------------------------
+STUDIO_ACCESS_PIN = os.environ.get("STUDIO_PIN", "0808")
+
+if "studio_authenticated" not in st.session_state:
+    st.session_state.studio_authenticated = False
+
+def render_pin_lock_screen():
+    st.markdown("""
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 16px 20px 16px;">
+        <div style="max-width: 440px; width: 100%; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 20px; padding: 36px 30px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05); text-align: center;">
+            <div style="display: inline-flex; align-items: center; justify-content: center; width: 68px; height: 68px; background: linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(79,70,229,0.08) 100%); border: 1px solid rgba(37,99,235,0.22); border-radius: 18px; font-size: 2.2rem; margin-bottom: 16px;">
+                🔒
+            </div>
+            <h2 style="font-size: 1.5rem; font-weight: 800; color: #0F172A; margin: 0 0 6px 0; letter-spacing: -0.02em;">
+                VideoCraft Studio
+            </h2>
+            <div style="display: inline-flex; align-items: center; gap: 6px; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 999px; padding: 3px 12px; font-size: 0.74rem; font-weight: 700; color: #1D4ED8; margin-bottom: 14px;">
+                🛡️ Private Creator Engine
+            </div>
+            <div style="font-size: 0.85rem; color: #64748B; line-height: 1.45; margin-bottom: 22px;">
+                Enter your 4-digit Security PIN to access the automated script-to-video production studio.
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_l1, col_l2, col_l3 = st.columns([1, 1.4, 1])
+    with col_l2:
+        pin_val = st.text_input(
+            "Enter Security PIN",
+            type="password",
+            placeholder="Enter PIN (e.g. 0808)...",
+            max_chars=12,
+            key="studio_pin_box",
+            label_visibility="collapsed"
+        )
+        if st.button("🔓 Unlock Studio", type="primary", use_container_width=True, key="btn_unlock_studio"):
+            if pin_val.strip() == STUDIO_ACCESS_PIN:
+                st.session_state.studio_authenticated = True
+                st.session_state.pin_error = False
+                st.rerun()
+            else:
+                st.session_state.pin_error = True
+
+        if st.session_state.get("pin_error"):
+            st.markdown("""
+            <div style="background:#FEF2F2; border:1px solid #FECACA; border-radius:10px; padding:10px; font-size:0.82rem; color:#B91C1C; text-align:center; font-weight:700; margin-top:10px;">
+                ❌ Incorrect PIN! Access Denied.
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="text-align: center; margin-top: 18px; font-size: 0.74rem; color: #94A3B8;">
+            Protected by Cloud Studio Shield · Unauthorized Access Prohibited
+        </div>
+        """, unsafe_allow_html=True)
+
+if not st.session_state.studio_authenticated:
+    render_pin_lock_screen()
+    st.stop()
+
 # --- SIDEBAR SETTINGS ---
 with st.sidebar:
     st.markdown("""
@@ -1042,6 +1105,15 @@ with st.sidebar:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    col_sb_auth, col_sb_lock = st.columns([3, 2])
+    with col_sb_auth:
+        st.markdown('<div style="font-size:0.75rem; color:#059669; font-weight:700; padding-top:6px;">🟢 Studio Unlocked</div>', unsafe_allow_html=True)
+    with col_sb_lock:
+        if st.button("🔒 Lock", help="Lock studio session", use_container_width=True, key="btn_sidebar_lock"):
+            st.session_state.studio_authenticated = False
+            st.rerun()
+
 
     st.markdown("### 🔑 API Authentication")
     pixabay_key = st.text_input(
