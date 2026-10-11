@@ -1326,6 +1326,403 @@ else:
     def open_voice_selection_dialog():
         st.info("Please use the Voice dropdown directly in Step 1.")
 
+def run_full_auto_video_pipeline(
+    script_text: str,
+    main_topic: str,
+    media_pref: str,
+    speed_mult: float,
+    tts_rate: str,
+    voice_name: str,
+    do_voice: bool,
+    pb_key: str,
+    ai_key: str,
+    tw: int,
+    th: int,
+    orient: str,
+    fit_m: str,
+    kb_style: str,
+    b_badge: bool,
+    b_style: str,
+    b_pos: str,
+    b_subs: bool,
+    sub_style: str,
+    p_buffer: float,
+    bgm_k: str,
+    custom_bgm,
+    bgm_vol: float,
+    niche_k: str,
+    status_container,
+    render_bar,
+    existing_scenes=None,
+    existing_scene_assets=None,
+    existing_selected_assets=None
+):
+    """
+    Automates complete end-to-end video production in background:
+    1. Parses script to scenes (or uses existing)
+    2. Parallel search for unique 1080p clips & AI visual fallback
+    3. Multi-worker pre-fetch for downloads, voiceover & subtitle overlays
+    4. Multi-core scene rendering
+    5. Final video merge & BGM ducking
+    6. Numbered assets ZIP & Dynamic YouTube SEO Kit
+    """
+    cleanup_storage_cache()
+    job_timestamp = time.strftime('%Y%m%d_%H%M%S')
+    job_dir = DOWNLOADS_DIR / f"job_{job_timestamp}"
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. SCENES
+    if existing_scenes:
+        scenes = existing_scenes
+    else:
+        status_container.info("📝 [1/4] Analyzing script into story scenes...")
+        render_bar.progress(0.05)
+        scenes = parse_script_to_scenes(
+            script_text,
+            default_duration=3.5,
+            default_media=media_pref,
+            speed=speed_mult,
+            main_topic=main_topic
+        )
+    if not scenes:
+        status_container.error("❌ Failed to parse script into scenes.")
+        return None
+
+    # 2. ASSET SEARCH & SELECTION (100% in Background)
+    if existing_scene_assets and existing_selected_assets:
+        scene_assets_dict = existing_scene_assets
+        selected_assets_dict = existing_selected_assets
+    else:
+        status_container.info(f"🔍 [2/4] Finding unique 1080p clips & AI visuals for {len(scenes)} scenes in parallel...")
+        render_bar.progress(0.15)
+
+        def _search_worker(item):
+            idx, sc_item = item
+            m_type_to_search = sc_item.get('media_pref', 'both')
+            res = safe_search_assets(
+                query=sc_item['keyword'],
+                key=pb_key,
+                media_type=m_type_to_search,
+                orientation=orient,
+                per_page=10,
+                sentence=sc_item['text'],
+                openai_key=ai_key,
+                dalle_prompt=sc_item.get('dalle_prompt', '')
+            )
+            if not res and m_type_to_search != "both":
+                res = safe_search_assets(
+                    query=sc_item['keyword'],
+                    key=pb_key,
+                    media_type="both",
+                    orientation=orient,
+                    per_page=10,
+                    sentence=sc_item['text'],
+                    openai_key=ai_key,
+                    dalle_prompt=sc_item.get('dalle_prompt', '')
+                )
+            if not res:
+                ai_asset = generate_ai_image(
+                    prompt=sc_item.get('dalle_prompt') or sc_item['text'],
+                    openai_key=ai_key
+                )
+                if ai_asset:
+                    res = [ai_asset]
+            return idx, sc_item, (res or [])
+
+        search_items = list(enumerate(scenes))
+        total_s = len(search_items)
+        completed_results = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(_search_worker, item): item[0] for item in search_items}
+            done_count = 0
+            for fut in as_completed(futures):
+                try:
+                    completed_results.append(fut.result())
+                except Exception:
+                    orig_idx = futures[fut]
+                    completed_results.append((orig_idx, scenes[orig_idx], []))
+                done_count += 1
+                render_bar.progress(0.15 + (done_count / total_s) * 0.15)
+
+        completed_results.sort(key=lambda x: x[0])
+        scene_assets_dict = {}
+        selected_assets_dict = {}
+        used_asset_ids = set()
+        for idx, sc, results in completed_results:
+            scene_assets_dict[sc['no']] = results
+            pick_idx, chosen_asset = pick_unique_candidate(results, used_asset_ids)
+            if chosen_asset:
+                used_asset_ids.add(chosen_asset.get('id'))
+                sc['duration'] = round(float(sc.get('duration', estimate_speech_duration(sc['text'], speed=speed_mult))), 1)
+            selected_assets_dict[sc['no']] = max(0, pick_idx)
+
+    total_scenes = len(scenes)
+
+    # 3. PHASE 1: PRE-FETCH (Media + Voiceover + Overlays)
+    status_container.info("🎙️ [3/4] Synthesizing human voice narration & downloading visuals...")
+    render_bar.progress(0.35)
+
+    def _prep_single_scene(idx_scene):
+        i, sc = idx_scene
+        sc_no = sc['no']
+        assets = scene_assets_dict.get(sc_no, [])
+        candidate_queue = []
+        sel_idx = selected_assets_dict.get(sc_no, 0)
+        if assets:
+            primary_asset = assets[min(sel_idx, len(assets) - 1)]
+            candidate_queue.append(primary_asset)
+            for a_idx, a in enumerate(assets):
+                if a_idx != min(sel_idx, len(assets) - 1):
+                    candidate_queue.append(a)
+
+        raw_path = None
+        chosen_asset = None
+        for c_idx, cand in enumerate(candidate_queue):
+            ext = ".jpg" if cand.get('type') == 'image' else ".mp4"
+            safe_slug = slugify(sc.get('keyword', 'asset'))
+            try_filename = f"raw_{sc_no}_{c_idx}_{safe_slug}{ext}"
+            try_path = job_dir / try_filename
+            dl_url = cand.get('download', '')
+            if dl_url and download_file(dl_url, try_path) and try_path.exists() and try_path.stat().st_size > 1000:
+                raw_path = try_path
+                chosen_asset = cand
+                break
+
+        # Fallback Tier 1: AI visual
+        if not raw_path or not raw_path.exists():
+            ai_path = job_dir / f"raw_{sc_no}_ai_fallback.jpg"
+            prompt = sc.get('dalle_prompt') or f"{sc.get('keyword', '')} {sc.get('scenario', '')} {sc.get('text', '')}".strip()
+            ai_res = generate_ai_image(prompt=prompt, openai_key=ai_key, dest_path=ai_path)
+            if ai_path.exists() and ai_path.stat().st_size > 500:
+                raw_path = ai_path
+                chosen_asset = ai_res or {
+                    "type": "image",
+                    "source": "AI Image Engine",
+                    "download": str(ai_path),
+                    "id": f"ai_gen_{sc_no}"
+                }
+
+        # Fallback Tier 2: Slide card
+        if not raw_path or not raw_path.exists():
+            card_path = job_dir / f"raw_{sc_no}_card.jpg"
+            create_fallback_slide(
+                output_path=card_path,
+                width=tw,
+                height=th,
+                title=f"Scene {sc_no}: {sc.get('keyword', '').title()}",
+                text=sc.get('text', '')
+            )
+            raw_path = card_path
+            chosen_asset = {
+                "type": "image",
+                "source": "Studio Graphic Slide",
+                "download": str(card_path),
+                "id": f"slide_{sc_no}"
+            }
+
+        is_img = (chosen_asset.get('type') == 'image')
+
+        # Synthesize natural human speech voiceover audio
+        audio_path = None
+        if do_voice and sc.get('text', '').strip():
+            voice_file = job_dir / f"voice_{sc_no}.mp3"
+            voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=voice_name, rate=tts_rate)
+            if not (voice_dur and voice_file.exists() and voice_file.stat().st_size > 500):
+                backup_voice = "hi-IN-MadhurNeural" if "hi-IN" not in voice_name else "en-US-ChristopherNeural"
+                voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=backup_voice, rate=tts_rate)
+
+            if voice_dur and voice_file.exists() and voice_file.stat().st_size > 500:
+                audio_path = voice_file
+                scene_dur = round(max(1.8, voice_dur + p_buffer), 2)
+            else:
+                scene_dur = round(float(sc.get('duration', estimate_speech_duration(sc['text'], speed=speed_mult))), 2)
+        else:
+            scene_dur = round(float(sc.get('duration', estimate_speech_duration(sc['text'], speed=speed_mult))), 2)
+
+        # Generate visual overlay image
+        overlay_path = None
+        if b_badge or b_subs:
+            overlay_path = job_dir / f"overlay_{sc_no}.png"
+            create_overlay_image(
+                width=tw,
+                height=th,
+                scene_no=sc_no,
+                output_png=overlay_path,
+                scene_text=sc['text'] if b_subs else None,
+                show_badge=b_badge,
+                badge_style=b_style,
+                badge_position=b_pos,
+                show_subtitle=b_subs,
+                subtitle_style=sub_style
+            )
+
+        return {
+            "index": i,
+            "sc": sc,
+            "sc_no": sc_no,
+            "raw_path": raw_path,
+            "is_img": is_img,
+            "audio_path": audio_path,
+            "scene_dur": scene_dur,
+            "overlay_path": overlay_path
+        }
+
+    prep_results = []
+    numbered_assets_for_zip = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures_prep = {executor.submit(_prep_single_scene, (i, sc)): i for i, sc in enumerate(scenes)}
+        done_prep = 0
+        for fut in as_completed(futures_prep):
+            try:
+                res_p = fut.result()
+                prep_results.append(res_p)
+            except Exception as prep_err:
+                print(f"Pre-fetch error for scene: {prep_err}")
+            done_prep += 1
+            render_bar.progress(0.35 + (done_prep / total_scenes) * 0.25)
+
+    prep_results.sort(key=lambda x: x["index"])
+    for pr in prep_results:
+        if pr.get("raw_path"):
+            numbered_assets_for_zip.append(pr["raw_path"])
+        if pr.get("audio_path"):
+            numbered_assets_for_zip.append(pr["audio_path"])
+
+    # 4. PHASE 2: VIDEO ENCODING
+    status_container.info("🎬 [4/4] Multi-core video rendering & merging final video...")
+    render_bar.progress(0.60)
+
+    def _encode_single_scene(prep_data):
+        i = prep_data["index"]
+        sc = prep_data["sc"]
+        sc_no = prep_data["sc_no"]
+        raw_path = prep_data["raw_path"]
+        is_img = prep_data["is_img"]
+        audio_path = prep_data["audio_path"]
+        scene_dur = prep_data["scene_dur"]
+        overlay_path = prep_data["overlay_path"]
+        clip_path = job_dir / f"{sc_no}_scene.mp4"
+
+        ok = safe_process_scene_clip(
+            media_path=raw_path,
+            output_path=clip_path,
+            target_w=tw,
+            target_h=th,
+            duration=scene_dur,
+            is_image=is_img,
+            overlay_path=overlay_path,
+            audio_path=audio_path,
+            fit_mode=fit_m,
+            ken_burns_style=kb_style,
+            scene_index=i
+        )
+
+        if not ok or not clip_path.exists() or clip_path.stat().st_size == 0:
+            fb_slide = job_dir / f"raw_{sc_no}_enc_fallback.jpg"
+            create_fallback_slide(
+                output_path=fb_slide,
+                width=tw,
+                height=th,
+                title=f"Scene {sc_no}: {sc.get('keyword', '').title()}",
+                text=sc.get('text', '')
+            )
+            ok = safe_process_scene_clip(
+                media_path=fb_slide,
+                output_path=clip_path,
+                target_w=tw,
+                target_h=th,
+                duration=scene_dur,
+                is_image=True,
+                overlay_path=overlay_path,
+                audio_path=audio_path,
+                fit_mode=fit_m,
+                ken_burns_style=kb_style,
+                scene_index=i
+            )
+
+        return i, clip_path, ok
+
+    encoded_clips = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures_enc = {executor.submit(_encode_single_scene, pd): pd["index"] for pd in prep_results}
+        done_enc = 0
+        for fut in as_completed(futures_enc):
+            try:
+                i_res, cp_res, ok_res = fut.result()
+                encoded_clips.append((i_res, cp_res, ok_res))
+            except Exception as enc_err:
+                print(f"Encoding error: {enc_err}")
+            done_enc += 1
+            render_bar.progress(0.60 + (done_enc / total_scenes) * 0.30)
+
+    encoded_clips.sort(key=lambda x: x[0])
+    processed_clips = [cp for i_idx, cp, ok_val in encoded_clips if ok_val and cp.exists() and cp.stat().st_size > 0]
+    if not processed_clips or len(processed_clips) != len(prep_results):
+        status_container.error("❌ Error during scene encoding.")
+        return None
+
+    # Merge
+    status_container.info("🎬 Merging scene clips with seamless cuts...")
+    raw_merged_file = job_dir / f"scenes_merged_{job_timestamp}.mp4"
+    merge_clips_to_final_video(processed_clips, raw_merged_file)
+    render_bar.progress(0.92)
+
+    final_merged_file = DOWNLOADS_DIR / f"merged_video_{job_timestamp}.mp4"
+
+    active_bgm_path = None
+    if bgm_k == "custom_upload" and custom_bgm:
+        custom_p = job_dir / f"custom_bgm_{custom_bgm.name}"
+        with open(custom_p, "wb") as bf:
+            bf.write(custom_bgm.getbuffer())
+        active_bgm_path = custom_p
+    elif bgm_k != "none" and bgm_k in BGM_CATALOG:
+        cand_bgm = BGM_DIR / BGM_CATALOG[bgm_k]["filename"]
+        if cand_bgm.exists():
+            active_bgm_path = cand_bgm
+
+    if active_bgm_path and active_bgm_path.exists():
+        bgm_label = BGM_CATALOG.get(bgm_k, {}).get("name", "Suspense Track")
+        status_container.info(f"🎵 Mixing background music ({bgm_label}) under narration...")
+        bgm_ok = add_background_music_to_video(
+            video_path=raw_merged_file,
+            bgm_path=active_bgm_path,
+            output_path=final_merged_file,
+            bgm_volume=bgm_vol,
+            fade_out_duration=2.0
+        )
+        if not bgm_ok or not final_merged_file.exists():
+            shutil.copy2(raw_merged_file, final_merged_file)
+    else:
+        shutil.copy2(raw_merged_file, final_merged_file)
+
+    # ZIP
+    status_container.info("📦 Packaging assets into numbered ZIP archive...")
+    zip_file = DOWNLOADS_DIR / f"assets_{job_timestamp}.zip"
+    make_numbered_zip(processed_clips + numbered_assets_for_zip, zip_file)
+    render_bar.progress(0.96)
+
+    # SEO Kit
+    status_container.info("🚀 Generating Dynamic YouTube Upload Kit & SEO...")
+    active_top = main_topic or (scenes[0].get('keyword') if scenes else "YouTube Video")
+    seo_kit = generate_youtube_seo_kit(
+        topic=active_top,
+        script_text=script_text,
+        scenes=scenes,
+        niche_key=niche_k
+    )
+
+    render_bar.progress(1.0)
+    status_container.success("🎉 Video generation complete!")
+
+    return {
+        "merged_video": str(final_merged_file),
+        "assets_zip": str(zip_file),
+        "youtube_seo_kit": seo_kit,
+        "parsed_scenes": scenes,
+        "scene_assets": scene_assets_dict,
+        "selected_assets": selected_assets_dict
+    }
+
 # Main Studio Tabs
 tab1, tab2 = st.tabs(["📝 Script to Merged Video Studio", "📊 CSV Batch Asset Finder"])
 
@@ -1572,9 +1969,8 @@ with tab1:
         if st.button("🪟 Open Voice Library", key="btn_open_voice_modal", use_container_width=True, help="Open full Voice Narrator modal dialog"):
             open_voice_selection_dialog()
 
-    col_btn_parse, col_media_type = st.columns([2, 2])
+    col_media_type, col_blank = st.columns([2, 2])
     with col_media_type:
-
         global_media_pref = st.selectbox(
             "Visual Media Distribution Mix",
             ["invideo_mix", "both", "video", "image"],
@@ -1587,611 +1983,105 @@ with tab1:
             help="60% Videos / 40% Images follows high-retention InVideo AI documentary standards."
         )
 
+    # 🚀 PRIMARY STUDIO ACTION CONTROLS
+    st.write("")
+    col_btn_gen, col_btn_parse = st.columns([3, 2])
+    with col_btn_gen:
+        trigger_1click = st.button(
+            "🚀 1-Click Generate & Download Video",
+            type="primary",
+            use_container_width=True,
+            help="Finds best 1080p clips automatically in background, synthesizes voiceover, renders, and produces final video immediately!"
+        )
     with col_btn_parse:
-        st.write("")
-        if st.button("✨ Parse Script & Generate InVideo Storyboard", type="primary", use_container_width=True):
-            if not script_input.strip():
-                st.warning("Please enter or select a script first.")
-            else:
-                scenes = parse_script_to_scenes(
-                    script_input,
-                    default_duration=default_duration,
-                    default_media=global_media_pref,
-                    speed=speed_multiplier,
-                    main_topic=main_topic_input
-                )
-                st.session_state.parsed_scenes = scenes
-                st.session_state.scene_assets = {}
-                st.session_state.selected_assets = {}
-                st.session_state.pop("merged_video", None)
-                st.session_state.pop("assets_zip", None)
-                st.success(f"🎉 Generated {len(scenes)} scenes with scenario keywords and {speed_mode.split(' ')[0]} dynamic durations!")
-                st.rerun()
+        trigger_parse = st.button(
+            "📝 Parse Storyboard Only (Manual Edit)",
+            type="secondary",
+            use_container_width=True,
+            help="Review & edit individual scene keywords or timings before rendering."
+        )
 
-    # STEP 2: Storyboard Review & Timeline Module
-    if st.session_state.get("parsed_scenes"):
-        scenes = st.session_state.parsed_scenes
-        total_est_dur = sum([float(s.get('duration', default_duration)) for s in scenes])
-
-        st.markdown(f"""
-        <div style="margin-top: 24px;"></div>
-        <div class="section-title">
-            <span>Step 2: InVideo AI Multi-Track Timeline & Storyboard ({len(scenes)} Scenes)</span>
-            <span class="section-badge">Total Runtime: {total_est_dur:.1f}s</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # InVideo AI Multi-Track Visual Timeline Box
-        video_count = sum(1 for s in scenes if s.get('media_pref') == 'video')
-        image_count = len(scenes) - video_count
-        
-        timeline_html = [
-            '<div class="timeline-container">',
-            f'<div class="timeline-header"><div class="timeline-title">🎬 Multi-Track Project Timeline</div>'
-            f'<div style="font-size:0.78rem; font-weight:600; color:#475569;">'
-            f'Mix: <strong style="color:#1D4ED8;">{video_count} Videos ({int(video_count/len(scenes)*100)}%)</strong> · '
-            f'<strong style="color:#7E22CE;">{image_count} Photos ({int(image_count/len(scenes)*100)}%)</strong> · '
-            f'Total: <strong style="color:#059669;">{total_est_dur:.1f}s</strong>'
-            f'</div></div>',
-            '<div class="timeline-track-title">🎞️ Visual Footage Track</div>',
-            '<div class="timeline-track">'
-        ]
-        curr_offset = 0.0
-        for sc in scenes:
-            d = float(sc.get('duration', default_duration))
-            m_icon = "🎥" if sc.get('media_pref') == 'video' else "📸"
-            timeline_html.append(
-                f'<div class="timeline-clip">'
-                f'<div class="timeline-clip-top">'
-                f'<span class="timeline-clip-label">{m_icon} Scene {sc["no"]}</span>'
-                f'<span class="timeline-clip-dur">{d:.1f}s</span>'
-                f'</div>'
-                f'<div class="timeline-clip-text" title="{sc["text"]}">{sc["text"]}</div>'
-                f'<div style="font-size:0.68rem; color:#94A3B8;">[{curr_offset:.1f}s - {curr_offset+d:.1f}s]</div>'
-                f'</div>'
-            )
-            curr_offset += d
-        timeline_html.append('</div></div>')
-        st.markdown("".join(timeline_html), unsafe_allow_html=True)
-
-        for idx, sc in enumerate(scenes):
-            m_label = "🎥 Video Scene (60% Mix)" if sc.get('media_pref') == 'video' else "📸 Photo Scene (40% Mix)"
-            is_hook = sc.get('is_hook', False) or (idx == 0)
-            hook_prefix = "🔥 OPENING HOOK (TOPIC ANCHOR) · " if is_hook else ""
-            with st.expander(f"{hook_prefix}🎬 Scene {sc['no']} · {m_label} · \"{sc['text'][:60]}...\" · ⏱️ {sc.get('duration', default_duration)}s", expanded=(idx == 0)):
-                if is_hook:
-                    st.info(f"🎯 **Hook Topic Anchor Active:** Scene 1 is strictly locked to your main topic: **{sc.get('hook_topic', sc.get('keyword'))}** (Hero Footage)")
-                else:
-                    st.caption(f"💡 **Detected Scenario:** {sc.get('scenario', 'Cinematic scene')}")
-                sc['text'] = st.text_area("Script Line (Subtitles)", value=sc['text'], key=f"txt_{idx}", height=75)
-                c_kw, c_dur = st.columns([2, 1])
-                with c_kw:
-                    sc['keyword'] = st.text_input("Scenario Stock Keyword", value=sc['keyword'], key=f"kw_{idx}", help="Scenario-based search query sent to stock libraries.")
-                with c_dur:
-                    is_img = (sc.get('media_pref') == 'image')
-                    curr_val = float(sc.get('duration', estimate_speech_duration(sc['text'])))
-                    curr_val = max(1.5, min(curr_val, 60.0))
-                    sc['duration'] = st.number_input(
-                        "Duration (s) [Audio Paced]",
-                        min_value=1.5,
-                        max_value=60.0,
-                        value=round(curr_val, 1),
-                        step=0.5,
-                        key=f"dur_{idx}",
-                        help="Audio-driven: Visual clip timing matches voice narration length (+ natural pause buffer)."
-                    )
-
-
-
-        # Search All Assets Button
-        st.write("")
-        if st.button("🔍 Find Matching Assets & Generate AI Visuals", type="primary", use_container_width=True):
-            if not pixabay_key:
-                st.error("Please ensure the Pixabay API key is set in the sidebar.")
-            else:
-                st.session_state.scene_assets = {}
-                st.session_state.selected_assets = {}
-                progress_bar = st.progress(0.0)
-                status_txt = st.empty()
-
-                def _search_worker(item):
-                    idx, sc_item = item
-                    m_type_to_search = sc_item.get('media_pref', 'both')
-                    res = safe_search_assets(
-                        query=sc_item['keyword'],
-                        key=pixabay_key,
-                        media_type=m_type_to_search,
-                        orientation=orientation,
-                        per_page=10,
-                        sentence=sc_item['text'],
-                        openai_key=openai_key,
-                        dalle_prompt=sc_item.get('dalle_prompt', '')
-                    )
-                    if not res and m_type_to_search != "both":
-                        res = safe_search_assets(
-                            query=sc_item['keyword'],
-                            key=pixabay_key,
-                            media_type="both",
-                            orientation=orientation,
-                            per_page=10,
-                            sentence=sc_item['text'],
-                            openai_key=openai_key,
-                            dalle_prompt=sc_item.get('dalle_prompt', '')
-                        )
-                    if not res:
-                        ai_asset = generate_ai_image(
-                            prompt=sc_item.get('dalle_prompt') or sc_item['text'],
-                            openai_key=openai_key
-                        )
-                        if ai_asset:
-                            res = [ai_asset]
-                    return idx, sc_item, (res or [])
-
-                search_items = list(enumerate(scenes))
-                total_s = len(search_items)
-                completed_results = []
-                with ThreadPoolExecutor(max_workers=4) as executor:
-                    futures = {executor.submit(_search_worker, item): item[0] for item in search_items}
-                    done_count = 0
-                    for fut in as_completed(futures):
-                        try:
-                            completed_results.append(fut.result())
-                        except Exception:
-                            orig_idx = futures[fut]
-                            completed_results.append((orig_idx, scenes[orig_idx], []))
-                        done_count += 1
-                        progress_bar.progress(done_count / total_s)
-                        status_txt.info(f"⚡ Finding matching visuals in parallel ({done_count}/{total_s})...")
-
-                # Restore strictly sequential scene order
-                completed_results.sort(key=lambda x: x[0])
-                used_asset_ids = set()
-                for idx, sc, results in completed_results:
-                    st.session_state.scene_assets[sc['no']] = results
-                    pick_idx, chosen_asset = pick_unique_candidate(results, used_asset_ids)
-                    if chosen_asset:
-                        used_asset_ids.add(chosen_asset['id'])
-                        sc['duration'] = round(float(sc.get('duration', estimate_speech_duration(sc['text']))), 1)
-                    st.session_state.selected_assets[sc['no']] = max(0, pick_idx)
-
-                status_txt.empty()
-                progress_bar.empty()
-                st.success("✅ Scenario footage & AI visuals ready! Review options in Step 3.")
-                st.rerun()
-
-    # STEP 3: Auto-Matched Scene Visuals (Best Choices Auto-Applied)
-    if st.session_state.get("scene_assets"):
-        st.markdown("""
-        <div style="margin-top: 28px;"></div>
-        <div class="section-title">
-            <span>Step 3: Auto-Matched Scene Visuals (Best Selection Ready)</span>
-            <span class="section-badge">🎯 Auto-Curated</span>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.info("💡 **Auto-Selection Active:** Best high-definition footage & photos have been automatically chosen for every scene. No manual selection needed!")
-
-        scenes = st.session_state.parsed_scenes
-        scene_assets = st.session_state.scene_assets
-
-        for idx, sc in enumerate(scenes):
-            sc_no = sc['no']
-            assets = scene_assets.get(sc_no, [])
-            m_icon = "🎥 Video" if sc.get('media_pref') == 'video' else "📸 Photo (Ken Burns Zoom)"
-            is_hook = sc.get('is_hook', False) or (idx == 0)
-            hook_chip = '<span class="chip" style="margin:0; background:#FEF08A; color:#854D0E; font-weight:700; border:1px solid #FACC15;">🔥 TOPIC HERO HOOK</span>' if is_hook else ''
-            
-            # Scene Header Banner
-            st.markdown(f"""
-            <div class="scene-header-bar">
-                <div style="display:flex; align-items:center; gap:12px;">
-                    <span class="scene-badge-num">SCENE {sc_no}</span>
-                    <span class="scene-quote">"{sc['text']}"</span>
-                    <span class="chip chip-video" style="margin:0;">{m_icon}</span>
-                    {hook_chip}
-                </div>
-                <span class="scene-duration-badge">⏱️ {float(sc.get('duration', default_duration)):.1f}s</span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            if not assets:
-                st.warning(f"No results found for '{sc['keyword']}'. Click '✨ Custom AI Visual' to generate.")
-                continue
-
-            curr_selected = st.session_state.selected_assets.get(sc_no, 0)
-            best_asset = assets[min(curr_selected, len(assets) - 1)]
-
-            # Auto-Selected Single Best Visual Card (Clean, modern, zero 4-option clutter)
-            st.markdown('<div class="asset-card-wrapper asset-card-selected" style="margin-bottom:18px;">', unsafe_allow_html=True)
-            col_preview, col_details, col_swap = st.columns([2, 5, 2])
-            
-            with col_preview:
-                if best_asset.get('preview'):
-                    st.image(best_asset['preview'], use_container_width=True)
-                else:
-                    st.caption("No preview available")
-            
-            with col_details:
-                if best_asset.get('is_ai_generated') or 'OpenAI' in best_asset.get('source', ''):
-                    st.markdown('<span class="chip chip-ai">✨ DALL-E AI Visual</span>', unsafe_allow_html=True)
-                elif best_asset.get('type') == 'video':
-                    st.markdown('<span class="chip chip-video">🎥 1080p Video Clip</span>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<span class="chip chip-photo">📸 High-Res Photo (Ken Burns Dynamic Zoom)</span>', unsafe_allow_html=True)
-                
-                st.markdown(f"**🎯 Auto-Selected Best Clip:** `{sc.get('keyword', 'Scene Visual')}`")
-                author = best_asset.get('author', 'Pixabay Creator')
-                dur_info = f" · Clip Length: {best_asset['duration']}s" if best_asset.get('duration') else ""
-                st.caption(f"👤 Creator: {author}{dur_info} · ID: `{best_asset.get('id', '')}`")
-                st.markdown(f"<span style='font-size:0.8rem; color:#64748B;'>Audio Pacing: Clip will play for exactly the speech length (+0.25s pause)</span>", unsafe_allow_html=True)
-
-            with col_swap:
-                st.write("")
-                if len(assets) > 1:
-                    next_idx = (curr_selected + 1) % len(assets)
-                    if st.button(f"🔄 Swap Match ({next_idx+1}/{len(assets)})", key=f"swap_{sc_no}", use_container_width=True, help="Cycles to alternative candidate if desired"):
-                        st.session_state.selected_assets[sc_no] = next_idx
-                        st.session_state.selected_assets = ensure_unique_selections(
-                            scenes, st.session_state.scene_assets, st.session_state.selected_assets
-                        )
-                        st.rerun()
-                if st.button(f"✨ Custom AI Visual", key=f"ai_{sc_no}", use_container_width=True, help="Generate custom AI scene visual"):
-                    ai_gen_item = generate_ai_image(
-                        prompt=sc.get('dalle_prompt') or sc['text'],
-                        openai_key=openai_key
-                    )
-                    if ai_gen_item:
-                        cur_list = st.session_state.scene_assets.get(sc_no, [])
-                        st.session_state.scene_assets[sc_no] = [ai_gen_item, *cur_list]
-                        st.session_state.selected_assets[sc_no] = 0
-                        st.rerun()
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-
-        # STEP 4: Render & Merge
-        st.markdown("""
-        <div style="margin-top: 32px;"></div>
-        <div class="section-title">
-            <span>Step 4: Generate & Merge Video</span>
-            <span class="section-badge">Production Engine</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Settings recap card
-        framing_text = "Crop & Fill (No black bars)" if fit_mode == "cover" else "Fit & Pad (Preserve ratio)"
-        badge_text = f"Burned ({badge_style}, {badge_position})" if burn_badge else "Disabled"
-        subtitle_text = "Burned Lower-Third" if burn_subtitles else "Disabled"
-        total_render_duration = sum([float(s.get('duration', default_duration)) for s in scenes])
-        
-        st.markdown(f"""
-        <div class="studio-card" style="margin-bottom: 16px;">
-            <div style="font-size:0.92rem; font-weight:700; color:#1E3A8A; margin-bottom:8px;">
-                ⚙️ InVideo Production Render Summary
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:18px; color:#334155; font-size:0.86rem;">
-                <div><strong style="color:#64748B;">Resolution:</strong> {target_w}x{target_h} ({format_choice.split('(')[0].strip()})</div>
-                <div><strong style="color:#64748B;">Total Runtime:</strong> {total_render_duration:.1f}s</div>
-                <div><strong style="color:#64748B;">Framing:</strong> {framing_text}</div>
-                <div><strong style="color:#64748B;">Scene Badges:</strong> {badge_text}</div>
-                <div><strong style="color:#64748B;">Subtitles:</strong> {subtitle_text}</div>
-                <div><strong style="color:#64748B;">Scenes:</strong> {len(scenes)}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        render_col1, render_col2 = st.columns([2, 3])
-        with render_col1:
-            start_render = st.button("🚀 Render & Merge Video Now", type="primary", use_container_width=True)
-
-        if start_render:
-            cleanup_storage_cache()
-            st.session_state.selected_assets = ensure_unique_selections(
-                scenes, st.session_state.scene_assets, st.session_state.selected_assets
-            )
-            job_timestamp = time.strftime('%Y%m%d_%H%M%S')
-            job_dir = DOWNLOADS_DIR / f"job_{job_timestamp}"
-            job_dir.mkdir(parents=True, exist_ok=True)
-
+    if trigger_1click:
+        if not script_input.strip():
+            st.warning("Please enter or select a script first.")
+        elif not pixabay_key:
+            st.error("Please ensure the Pixabay API key is set in the sidebar.")
+        else:
             status_container = st.empty()
             render_bar = st.progress(0.0)
+            pipeline_res = run_full_auto_video_pipeline(
+                script_text=script_input,
+                main_topic=main_topic_input,
+                media_pref=global_media_pref,
+                speed_mult=speed_multiplier,
+                tts_rate=tts_rate_str,
+                voice_name=selected_voice,
+                do_voice=enable_voiceover,
+                pb_key=pixabay_key,
+                ai_key=openai_key,
+                tw=target_w,
+                th=target_h,
+                orient=orientation,
+                fit_m=fit_mode,
+                kb_style=ken_burns_style,
+                b_badge=burn_badge,
+                b_style=badge_style,
+                b_pos=badge_position,
+                b_subs=burn_subtitles,
+                sub_style=subtitle_style_choice,
+                p_buffer=pause_buffer,
+                bgm_k=selected_bgm_key,
+                custom_bgm=custom_bgm_file,
+                bgm_vol=bgm_volume,
+                niche_k=active_niche_k,
+                status_container=status_container,
+                render_bar=render_bar
+            )
+            if pipeline_res:
+                st.session_state.merged_video = pipeline_res["merged_video"]
+                st.session_state.assets_zip = pipeline_res["assets_zip"]
+                st.session_state.youtube_seo_kit = pipeline_res["youtube_seo_kit"]
+                st.session_state.parsed_scenes = pipeline_res["parsed_scenes"]
+                st.session_state.scene_assets = pipeline_res["scene_assets"]
+                st.session_state.selected_assets = pipeline_res["selected_assets"]
+                st.session_state.active_script_content = script_input
+                st.session_state.custom_main_topic = main_topic_input
+                st.rerun()
 
-            # Extract variables safely in main thread for thread-safety
-            active_voice = st.session_state.get("selected_voice", DEFAULT_VOICE)
-            do_voiceover = st.session_state.get("enable_voiceover", True)
-            sel_assets_dict = dict(st.session_state.get("selected_assets", {}))
-            scene_assets_dict = dict(st.session_state.get("scene_assets", {}))
-            total_scenes = len(scenes)
+    if trigger_parse:
+        if not script_input.strip():
+            st.warning("Please enter or select a script first.")
+        else:
+            scenes = parse_script_to_scenes(
+                script_input,
+                default_duration=default_duration,
+                default_media=global_media_pref,
+                speed=speed_multiplier,
+                main_topic=main_topic_input
+            )
+            st.session_state.parsed_scenes = scenes
+            st.session_state.scene_assets = {}
+            st.session_state.selected_assets = {}
+            st.session_state.pop("merged_video", None)
+            st.session_state.pop("assets_zip", None)
+            st.success(f"🎉 Generated {len(scenes)} scenes with scenario keywords and {speed_mode.split(' ')[0]} dynamic durations!")
+            st.rerun()
 
-            # -------------------------------------------------------------
-            # PHASE 1: HIGH-SPEED PARALLEL PRE-FETCH (4 NETWORK WORKERS)
-            # Downloads media assets, synthesizes voiceovers, renders overlays
-            # -------------------------------------------------------------
-            status_container.info(f"⚡ [Phase 1/2: Turbo Pre-Fetch] Preparing audio narration & visuals in parallel...")
-            
-            def _prep_single_scene(idx_scene):
-                i, sc = idx_scene
-                sc_no = sc['no']
-                assets = scene_assets_dict.get(sc_no, [])
-                candidate_queue = []
-                sel_idx = sel_assets_dict.get(sc_no, 0)
-                if assets:
-                    primary_asset = assets[min(sel_idx, len(assets) - 1)]
-                    candidate_queue.append(primary_asset)
-                    for a_idx, a in enumerate(assets):
-                        if a_idx != min(sel_idx, len(assets) - 1):
-                            candidate_queue.append(a)
-
-                raw_path = None
-                chosen_asset = None
-                for c_idx, cand in enumerate(candidate_queue):
-                    ext = ".jpg" if cand.get('type') == 'image' else ".mp4"
-                    safe_slug = slugify(sc.get('keyword', 'asset'))
-                    try_filename = f"raw_{sc_no}_{c_idx}_{safe_slug}{ext}"
-                    try_path = job_dir / try_filename
-                    dl_url = cand.get('download', '')
-                    if dl_url and download_file(dl_url, try_path) and try_path.exists() and try_path.stat().st_size > 1000:
-                        raw_path = try_path
-                        chosen_asset = cand
-                        break
-
-                # Fallback Tier 1: AI visual
-                if not raw_path or not raw_path.exists():
-                    ai_path = job_dir / f"raw_{sc_no}_ai_fallback.jpg"
-                    prompt = sc.get('dalle_prompt') or f"{sc.get('keyword', '')} {sc.get('scenario', '')} {sc.get('text', '')}".strip()
-                    ai_res = generate_ai_image(prompt=prompt, openai_key=openai_key, dest_path=ai_path)
-                    if ai_path.exists() and ai_path.stat().st_size > 500:
-                        raw_path = ai_path
-                        chosen_asset = ai_res or {
-                            "type": "image",
-                            "source": "AI Image Engine",
-                            "download": str(ai_path),
-                            "id": f"ai_gen_{sc_no}"
-                        }
-
-                # Fallback Tier 2: Slide card
-                if not raw_path or not raw_path.exists():
-                    card_path = job_dir / f"raw_{sc_no}_card.jpg"
-                    create_fallback_slide(
-                        output_path=card_path,
-                        width=target_w,
-                        height=target_h,
-                        title=f"Scene {sc_no}: {sc.get('keyword', '').title()}",
-                        text=sc.get('text', '')
-                    )
-                    raw_path = card_path
-                    chosen_asset = {
-                        "type": "image",
-                        "source": "Studio Graphic Slide",
-                        "download": str(card_path),
-                        "id": f"slide_{sc_no}"
-                    }
-
-                is_img = (chosen_asset.get('type') == 'image')
-
-                # Synthesize natural human speech voiceover audio
-                audio_path = None
-                if do_voiceover and sc.get('text', '').strip():
-                    voice_file = job_dir / f"voice_{sc_no}.mp3"
-                    voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=active_voice, rate=tts_rate_str)
-                    if not (voice_dur and voice_file.exists() and voice_file.stat().st_size > 500):
-                        backup_voice = "hi-IN-MadhurNeural" if "hi-IN" not in active_voice else "en-US-ChristopherNeural"
-                        voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=backup_voice, rate=tts_rate_str)
-
-                    if voice_dur and voice_file.exists() and voice_file.stat().st_size > 500:
-                        audio_path = voice_file
-                        scene_dur = round(max(1.8, voice_dur + pause_buffer), 2)
-                    else:
-                        scene_dur = round(float(sc.get('duration', estimate_speech_duration(sc['text'], speed=speed_multiplier))), 2)
-                else:
-                    scene_dur = round(float(sc.get('duration', estimate_speech_duration(sc['text'], speed=speed_multiplier))), 2)
-
-                # Generate visual overlay image
-                overlay_path = None
-                if burn_badge or burn_subtitles:
-                    overlay_path = job_dir / f"overlay_{sc_no}.png"
-                    create_overlay_image(
-                        width=target_w,
-                        height=target_h,
-                        scene_no=sc_no,
-                        output_png=overlay_path,
-                        scene_text=sc['text'] if burn_subtitles else None,
-                        show_badge=burn_badge,
-                        badge_style=badge_style,
-                        badge_position=badge_position,
-                        show_subtitle=burn_subtitles,
-                        subtitle_style=subtitle_style_choice
-                    )
-
-                return {
-                    "index": i,
-                    "sc": sc,
-                    "sc_no": sc_no,
-                    "raw_path": raw_path,
-                    "is_img": is_img,
-                    "audio_path": audio_path,
-                    "scene_dur": scene_dur,
-                    "overlay_path": overlay_path
-                }
-
-            prep_results = []
-            numbered_assets_for_zip = []
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                futures_prep = {executor.submit(_prep_single_scene, (i, sc)): i for i, sc in enumerate(scenes)}
-                done_prep = 0
-                for fut in as_completed(futures_prep):
-                    try:
-                        res_p = fut.result()
-                        prep_results.append(res_p)
-                    except Exception as prep_err:
-                        print(f"Pre-fetch error for scene: {prep_err}")
-                    done_prep += 1
-                    render_bar.progress((done_prep / total_scenes) * 0.45)
-                    status_container.info(f"⚡ [Phase 1/2: Turbo Pre-Fetch] Audio narration & visuals ready ({done_prep}/{total_scenes})...")
-
-            prep_results.sort(key=lambda x: x["index"])
-            for pr in prep_results:
-                if pr.get("raw_path"):
-                    numbered_assets_for_zip.append(pr["raw_path"])
-                if pr.get("audio_path"):
-                    numbered_assets_for_zip.append(pr["audio_path"])
-
-            # -------------------------------------------------------------
-            # PHASE 2: BALANCED MULTI-CORE VIDEO ENCODING (2 WORKERS)
-            # Encodes clips concurrently, matching dual-core CPU architecture
-            # -------------------------------------------------------------
-            status_container.info(f"🎬 [Phase 2/2: Turbo Multi-Core Render] Encoding video scene clips in parallel...")
-
-            def _encode_single_scene(prep_data):
-                i = prep_data["index"]
-                sc = prep_data["sc"]
-                sc_no = prep_data["sc_no"]
-                raw_path = prep_data["raw_path"]
-                is_img = prep_data["is_img"]
-                audio_path = prep_data["audio_path"]
-                scene_dur = prep_data["scene_dur"]
-                overlay_path = prep_data["overlay_path"]
-                clip_path = job_dir / f"{sc_no}_scene.mp4"
-
-                ok = safe_process_scene_clip(
-                    media_path=raw_path,
-                    output_path=clip_path,
-                    target_w=target_w,
-                    target_h=target_h,
-                    duration=scene_dur,
-                    is_image=is_img,
-                    overlay_path=overlay_path,
-                    audio_path=audio_path,
-                    fit_mode=fit_mode,
-                    ken_burns_style=ken_burns_style,
-                    scene_index=i
-                )
-
-                if not ok or not clip_path.exists() or clip_path.stat().st_size == 0:
-                    fb_slide = job_dir / f"raw_{sc_no}_enc_fallback.jpg"
-                    create_fallback_slide(
-                        output_path=fb_slide,
-                        width=target_w,
-                        height=target_h,
-                        title=f"Scene {sc_no}: {sc.get('keyword', '').title()}",
-                        text=sc.get('text', '')
-                    )
-                    ok = safe_process_scene_clip(
-                        media_path=fb_slide,
-                        output_path=clip_path,
-                        target_w=target_w,
-                        target_h=target_h,
-                        duration=scene_dur,
-                        is_image=True,
-                        overlay_path=overlay_path,
-                        audio_path=audio_path,
-                        fit_mode=fit_mode,
-                        ken_burns_style=ken_burns_style,
-                        scene_index=i
-                    )
-
-                return i, clip_path, ok
-
-            encoded_clips = []
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                futures_enc = {executor.submit(_encode_single_scene, pd): pd["index"] for pd in prep_results}
-                done_enc = 0
-                for fut in as_completed(futures_enc):
-                    try:
-                        i_res, cp_res, ok_res = fut.result()
-                        encoded_clips.append((i_res, cp_res, ok_res))
-                    except Exception as enc_err:
-                        print(f"Encoding error: {enc_err}")
-                    done_enc += 1
-                    render_bar.progress(0.45 + (done_enc / total_scenes) * 0.45)
-                    status_container.info(f"🎬 [Phase 2/2: Turbo Multi-Core Render] Encoding video scene clips ({done_enc}/{total_scenes})...")
-
-            encoded_clips.sort(key=lambda x: x[0])
-            processed_clips = [cp for i_idx, cp, ok_val in encoded_clips if ok_val and cp.exists() and cp.stat().st_size > 0]
-            success = bool(processed_clips and len(processed_clips) == len(prep_results))
-
-            if success and processed_clips:
-                status_container.info("🎬 Merging scene clips with seamless cuts...")
-                raw_merged_file = job_dir / f"scenes_merged_{job_timestamp}.mp4"
-                merged_ok = merge_clips_to_final_video(processed_clips, raw_merged_file)
-                render_bar.progress(0.95)
-
-                final_merged_file = DOWNLOADS_DIR / f"merged_video_{job_timestamp}.mp4"
-
-                # Check if Background Music (BGM) should be mixed under narration
-                active_bgm_path = None
-                if selected_bgm_key == "custom_upload" and custom_bgm_file:
-                    custom_p = job_dir / f"custom_bgm_{custom_bgm_file.name}"
-                    with open(custom_p, "wb") as bf:
-                        bf.write(custom_bgm_file.getbuffer())
-                    active_bgm_path = custom_p
-                elif selected_bgm_key != "none" and selected_bgm_key in BGM_CATALOG:
-                    cand_bgm = BGM_DIR / BGM_CATALOG[selected_bgm_key]["filename"]
-                    if cand_bgm.exists():
-                        active_bgm_path = cand_bgm
-
-                if active_bgm_path and active_bgm_path.exists():
-                    bgm_label = BGM_CATALOG.get(selected_bgm_key, {}).get("name", "Suspense Track")
-                    status_container.info(f"🎵 Mixing suspense background music ({bgm_label}) under narration...")
-                    bgm_ok = add_background_music_to_video(
-                        video_path=raw_merged_file,
-                        bgm_path=active_bgm_path,
-                        output_path=final_merged_file,
-                        bgm_volume=bgm_volume,
-                        fade_out_duration=2.0
-                    )
-                    if not bgm_ok or not final_merged_file.exists():
-                        import shutil
-                        shutil.copy2(raw_merged_file, final_merged_file)
-                else:
-                    import shutil
-                    shutil.copy2(raw_merged_file, final_merged_file)
-
-                status_container.info("📦 Packaging assets into numbered ZIP archive...")
-                zip_file = DOWNLOADS_DIR / f"assets_{job_timestamp}.zip"
-                make_numbered_zip(processed_clips + numbered_assets_for_zip, zip_file)
-                render_bar.progress(1.0)
-
-                if final_merged_file.exists() and final_merged_file.stat().st_size > 0:
-                    st.session_state.merged_video = str(final_merged_file)
-                    st.session_state.assets_zip = str(zip_file)
-
-                    # -------------------------------------------------------------
-                    # -------------------------------------------------------------
-                    # 🚀 AUTO-GENERATE YOUTUBE SEO KIT (DYNAMIC DESCRIPTION & CHAPTERS)
-                    # -------------------------------------------------------------
-                    active_niche_k = st.session_state.get("selected_niche", "history")
-                    active_top = st.session_state.get("custom_main_topic") or (scenes[0].get('keyword') if scenes else "Ancient Mysteries")
-                    try:
-                        status_container.info("🚀 Generating Dynamic YouTube Upload Kit & SEO...")
-                        seo_kit = generate_youtube_seo_kit(
-                            topic=active_top,
-                            script_text=st.session_state.get("active_script_content", ""),
-                            scenes=scenes,
-                            niche_key=active_niche_k
-                        )
-                        st.session_state.youtube_seo_kit = seo_kit
-                    except Exception as seo_err:
-                        print(f"Error generating SEO kit: {seo_err}")
-
-                    status_container.success("🎉 Video generated successfully!")
-                    st.rerun()
-                else:
-                    st.error("Failed to compile final video.")
-
-
-    # STEP 5: Video Player & Downloads
-    if st.session_state.get("merged_video"):
+    # =====================================================================
+    # STEP 5: VIDEO PLAYER & DOWNLOADS (SHOWN PROMINENTLY ONCE GENERATED)
+    # =====================================================================
+    has_merged = bool(st.session_state.get("merged_video"))
+    if has_merged:
         merged_path = Path(st.session_state.merged_video)
         if merged_path.exists():
             st.markdown("""
-            <div style="margin-top: 32px;"></div>
+            <div style="margin-top: 28px;"></div>
             <div class="section-title">
-                <span>Step 5: Preview & Download Merged Video</span>
-                <span class="section-badge">Ready for Export</span>
+                <span>Step 2: Preview & Download Final Video</span>
+                <span class="section-badge" style="background:#ECFDF5; color:#059669; border-color:#A7F3D0;">🎉 100% Production Ready</span>
             </div>
             """, unsafe_allow_html=True)
-            
+
             # Embedded Video Player
             st.video(str(merged_path))
 
@@ -2232,20 +2122,20 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Calculate topic & title based clean filename slug for YouTube SEO file naming
             active_topic_raw = st.session_state.get("custom_main_topic") or ""
             if not active_topic_raw and st.session_state.get("youtube_seo_kit"):
                 titles_list = st.session_state["youtube_seo_kit"].get("titles", [])
                 if titles_list:
                     active_topic_raw = titles_list[0]
             if not active_topic_raw:
-                active_topic_raw = st.session_state.get("current_topic") or (scenes[0].get('keyword') if scenes else "YouTube_Video")
-            
+                cur_scenes = st.session_state.get("parsed_scenes", [])
+                active_topic_raw = st.session_state.get("current_topic") or (cur_scenes[0].get('keyword') if cur_scenes else "YouTube_Video")
+
             topic_slug = slugify(active_topic_raw)
 
-            # Download Buttons for Long Video
+            # Download & Action Buttons
             st.write("")
-            dl_col1, dl_col2 = st.columns(2)
+            dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 2])
             with dl_col1:
                 with open(merged_path, "rb") as vf:
                     st.download_button(
@@ -2262,15 +2152,20 @@ with tab1:
                     if zip_p.exists():
                         with open(zip_p, "rb") as zf:
                             st.download_button(
-                                label=f"📦 Download Archive ({topic_slug}_Clips_and_Audio.zip)",
+                                label=f"📦 Download Archive ZIP",
                                 data=zf,
                                 file_name=f"{topic_slug}_Clips_and_Audio.zip",
                                 mime="application/zip",
                                 use_container_width=True
                             )
+            with dl_col3:
+                if st.button("✨ Create Another Video", use_container_width=True, help="Clear and start a fresh script"):
+                    for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
 
             # -------------------------------------------------------------
-            # 🚀 YOUTUBE STUDIO UPLOAD & GROWTH KIT (SEO + 1280x720 THUMBNAIL)
+            # 🚀 YOUTUBE STUDIO UPLOAD & GROWTH KIT
             # -------------------------------------------------------------
             st.markdown("""
             <div style="margin-top: 36px;"></div>
@@ -2281,13 +2176,13 @@ with tab1:
             """, unsafe_allow_html=True)
 
             active_niche_k = st.session_state.get("selected_niche", "history")
-            active_top = st.session_state.get("custom_main_topic") or (scenes[0].get('keyword') if scenes else "Ancient Mysteries")
+            active_top = st.session_state.get("custom_main_topic") or (st.session_state.get("parsed_scenes", [{}])[0].get('keyword') if st.session_state.get("parsed_scenes") else "Ancient Mysteries")
 
             if not st.session_state.get("youtube_seo_kit"):
                 st.session_state.youtube_seo_kit = generate_youtube_seo_kit(
                     topic=active_top,
-                    script_text=st.session_state.get("active_script_content", ""),
-                    scenes=scenes,
+                    script_text=st.session_state.get("active_script_content", script_input),
+                    scenes=st.session_state.get("parsed_scenes", []),
                     niche_key=active_niche_k
                 )
 
@@ -2313,7 +2208,6 @@ with tab1:
                 st.code(seo_kit.get("description", ""), language="markdown")
                 st.caption("📋 Generated dynamically from your video script. Paste directly into your YouTube video description.")
 
-            # Complete SEO Kit 1-Click .txt Download
             seo_txt_content = f"""======================================================================
 YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
 ======================================================================
@@ -2353,6 +2247,235 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 <div style="font-size:0.86rem; font-weight:600; color:#0F172A; margin-top:2px;">{seo_kit.get('pinned_comment', '')}</div>
             </div>
             """, unsafe_allow_html=True)
+
+    # =====================================================================
+    # ADVANCED EXPANDER: REVIEW STORYBOARD & SCENE CLIPS (OPTIONAL / COLLAPSED BY DEFAULT)
+    # =====================================================================
+    has_parsed = bool(st.session_state.get("parsed_scenes"))
+    if has_parsed:
+        with st.expander("🛠️ Advanced: Review Storyboard & Scene Clips (Optional)", expanded=(has_parsed and not has_merged)):
+            scenes = st.session_state.parsed_scenes
+            total_est_dur = sum([float(s.get('duration', default_duration)) for s in scenes])
+
+            st.markdown(f"""
+            <div class="section-title" style="margin-top:10px;">
+                <span>InVideo AI Multi-Track Timeline & Storyboard ({len(scenes)} Scenes)</span>
+                <span class="section-badge">Total Runtime: {total_est_dur:.1f}s</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            video_count = sum(1 for s in scenes if s.get('media_pref') == 'video')
+            image_count = len(scenes) - video_count
+
+            timeline_html = [
+                '<div class="timeline-container">',
+                f'<div class="timeline-header"><div class="timeline-title">🎬 Multi-Track Project Timeline</div>'
+                f'<div style="font-size:0.78rem; font-weight:600; color:#475569;">'
+                f'Mix: <strong style="color:#1D4ED8;">{video_count} Videos ({int(video_count/len(scenes)*100)}%)</strong> · '
+                f'<strong style="color:#7E22CE;">{image_count} Photos ({int(image_count/len(scenes)*100)}%)</strong> · '
+                f'Total: <strong style="color:#059669;">{total_est_dur:.1f}s</strong>'
+                f'</div></div>',
+                '<div class="timeline-track-title">🎞️ Visual Footage Track</div>',
+                '<div class="timeline-track">'
+            ]
+            curr_offset = 0.0
+            for sc in scenes:
+                d = float(sc.get('duration', default_duration))
+                m_icon = "🎥" if sc.get('media_pref') == 'video' else "📸"
+                timeline_html.append(
+                    f'<div class="timeline-clip">'
+                    f'<div class="timeline-clip-top">'
+                    f'<span class="timeline-clip-label">{m_icon} Scene {sc["no"]}</span>'
+                    f'<span class="timeline-clip-dur">{d:.1f}s</span>'
+                    f'</div>'
+                    f'<div class="timeline-clip-text" title="{sc["text"]}">{sc["text"]}</div>'
+                    f'<div style="font-size:0.68rem; color:#94A3B8;">[{curr_offset:.1f}s - {curr_offset+d:.1f}s]</div>'
+                    f'</div>'
+                )
+                curr_offset += d
+            timeline_html.append('</div></div>')
+            st.markdown("".join(timeline_html), unsafe_allow_html=True)
+
+            for idx, sc in enumerate(scenes):
+                m_label = "🎥 Video Scene (60% Mix)" if sc.get('media_pref') == 'video' else "📸 Photo Scene (40% Mix)"
+                is_hook = sc.get('is_hook', False) or (idx == 0)
+                hook_prefix = "🔥 OPENING HOOK (TOPIC ANCHOR) · " if is_hook else ""
+                with st.expander(f"{hook_prefix}🎬 Scene {sc['no']} · {m_label} · \"{sc['text'][:60]}...\" · ⏱️ {sc.get('duration', default_duration)}s", expanded=(idx == 0)):
+                    if is_hook:
+                        st.info(f"🎯 **Hook Topic Anchor Active:** Scene 1 is strictly locked to your main topic: **{sc.get('hook_topic', sc.get('keyword'))}** (Hero Footage)")
+                    else:
+                        st.caption(f"💡 **Detected Scenario:** {sc.get('scenario', 'Cinematic scene')}")
+                    sc['text'] = st.text_area("Script Line (Subtitles)", value=sc['text'], key=f"txt_{idx}", height=75)
+                    c_kw, c_dur = st.columns([2, 1])
+                    with c_kw:
+                        sc['keyword'] = st.text_input("Scenario Stock Keyword", value=sc['keyword'], key=f"kw_{idx}", help="Scenario-based search query sent to stock libraries.")
+                    with c_dur:
+                        curr_val = float(sc.get('duration', estimate_speech_duration(sc['text'])))
+                        curr_val = max(1.5, min(curr_val, 60.0))
+                        sc['duration'] = st.number_input(
+                            "Duration (s) [Audio Paced]",
+                            min_value=1.5,
+                            max_value=60.0,
+                            value=round(curr_val, 1),
+                            step=0.5,
+                            key=f"dur_{idx}",
+                            help="Audio-driven: Visual clip timing matches voice narration length (+ natural pause buffer)."
+                        )
+
+            # Search Assets Button inside expander
+            st.write("")
+            if st.button("🔍 Find Matching Assets & AI Visuals", type="primary", use_container_width=True, key="btn_adv_find_assets"):
+                if not pixabay_key:
+                    st.error("Please ensure the Pixabay API key is set in the sidebar.")
+                else:
+                    st.session_state.scene_assets = {}
+                    st.session_state.selected_assets = {}
+                    bar_adv = st.progress(0.0)
+                    txt_adv = st.empty()
+
+                    def _search_worker_adv(item):
+                        idx, sc_item = item
+                        m_type = sc_item.get('media_pref', 'both')
+                        res = safe_search_assets(
+                            query=sc_item['keyword'],
+                            key=pixabay_key,
+                            media_type=m_type,
+                            orientation=orientation,
+                            per_page=10,
+                            sentence=sc_item['text'],
+                            openai_key=openai_key,
+                            dalle_prompt=sc_item.get('dalle_prompt', '')
+                        )
+                        if not res and m_type != "both":
+                            res = safe_search_assets(
+                                query=sc_item['keyword'],
+                                key=pixabay_key,
+                                media_type="both",
+                                orientation=orientation,
+                                per_page=10,
+                                sentence=sc_item['text'],
+                                openai_key=openai_key,
+                                dalle_prompt=sc_item.get('dalle_prompt', '')
+                            )
+                        if not res:
+                            ai_asset = generate_ai_image(
+                                prompt=sc_item.get('dalle_prompt') or sc_item['text'],
+                                openai_key=openai_key
+                            )
+                            if ai_asset:
+                                res = [ai_asset]
+                        return idx, sc_item, (res or [])
+
+                    search_items = list(enumerate(scenes))
+                    total_s = len(search_items)
+                    comp_res = []
+                    with ThreadPoolExecutor(max_workers=4) as executor:
+                        futs = {executor.submit(_search_worker_adv, it): it[0] for it in search_items}
+                        d_cnt = 0
+                        for f in as_completed(futs):
+                            try:
+                                comp_res.append(f.result())
+                            except Exception:
+                                o_idx = futs[f]
+                                comp_res.append((o_idx, scenes[o_idx], []))
+                            d_cnt += 1
+                            bar_adv.progress(d_cnt / total_s)
+                            txt_adv.info(f"⚡ Finding visuals ({d_cnt}/{total_s})...")
+
+                    comp_res.sort(key=lambda x: x[0])
+                    used_ids = set()
+                    for idx, sc, results in comp_res:
+                        st.session_state.scene_assets[sc['no']] = results
+                        pick_idx, chosen_asset = pick_unique_candidate(results, used_ids)
+                        if chosen_asset:
+                            used_ids.add(chosen_asset['id'])
+                            sc['duration'] = round(float(sc.get('duration', estimate_speech_duration(sc['text']))), 1)
+                        st.session_state.selected_assets[sc['no']] = max(0, pick_idx)
+
+                    txt_adv.empty()
+                    bar_adv.empty()
+                    st.success("✅ Visuals found!")
+                    st.rerun()
+
+            # If scene assets exist, render candidate cards & render button inside expander
+            if st.session_state.get("scene_assets"):
+                st.markdown("---")
+                st.markdown("##### 🎯 Selected Scene Visual Cards (Swap or Change):")
+                scene_assets = st.session_state.scene_assets
+                for idx, sc in enumerate(scenes):
+                    sc_no = sc['no']
+                    assets = scene_assets.get(sc_no, [])
+                    if not assets:
+                        continue
+                    curr_selected = st.session_state.selected_assets.get(sc_no, 0)
+                    best_asset = assets[min(curr_selected, len(assets) - 1)]
+
+                    st.markdown('<div class="asset-card-wrapper asset-card-selected" style="margin-bottom:12px;">', unsafe_allow_html=True)
+                    c_p, c_d, c_s = st.columns([2, 5, 2])
+                    with c_p:
+                        if best_asset.get('preview'):
+                            st.image(best_asset['preview'], use_container_width=True)
+                        else:
+                            st.caption("No preview")
+                    with c_d:
+                        if best_asset.get('type') == 'video':
+                            st.markdown(f"**Scene {sc_no} (🎥 Video):** `{sc.get('keyword', '')}`")
+                        else:
+                            st.markdown(f"**Scene {sc_no} (📸 Photo):** `{sc.get('keyword', '')}`")
+                        st.caption(f"👤 {best_asset.get('author', 'Creator')} · ID: `{best_asset.get('id', '')}`")
+                    with c_s:
+                        if len(assets) > 1:
+                            next_idx = (curr_selected + 1) % len(assets)
+                            if st.button(f"🔄 Swap ({next_idx+1}/{len(assets)})", key=f"adv_swap_{sc_no}", use_container_width=True):
+                                st.session_state.selected_assets[sc_no] = next_idx
+                                st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                st.write("")
+                if st.button("🚀 Render & Merge Video from Storyboard", type="primary", use_container_width=True, key="btn_adv_render"):
+                    status_c = st.empty()
+                    r_bar = st.progress(0.0)
+                    pipeline_res = run_full_auto_video_pipeline(
+                        script_text=st.session_state.get("active_script_content", script_input),
+                        main_topic=st.session_state.get("custom_main_topic", main_topic_input),
+                        media_pref=global_media_pref,
+                        speed_mult=speed_multiplier,
+                        tts_rate=tts_rate_str,
+                        voice_name=selected_voice,
+                        do_voice=enable_voiceover,
+                        pb_key=pixabay_key,
+                        ai_key=openai_key,
+                        tw=target_w,
+                        th=target_h,
+                        orient=orientation,
+                        fit_m=fit_mode,
+                        kb_style=ken_burns_style,
+                        b_badge=burn_badge,
+                        b_style=badge_style,
+                        b_pos=badge_position,
+                        b_subs=burn_subtitles,
+                        sub_style=subtitle_style_choice,
+                        p_buffer=pause_buffer,
+                        bgm_k=selected_bgm_key,
+                        custom_bgm=custom_bgm_file,
+                        bgm_vol=bgm_volume,
+                        niche_k=active_niche_k,
+                        status_container=status_c,
+                        render_bar=r_bar,
+                        existing_scenes=scenes,
+                        existing_scene_assets=st.session_state.scene_assets,
+                        existing_selected_assets=st.session_state.selected_assets
+                    )
+                    if pipeline_res:
+                        st.session_state.merged_video = pipeline_res["merged_video"]
+                        st.session_state.assets_zip = pipeline_res["assets_zip"]
+                        st.session_state.youtube_seo_kit = pipeline_res["youtube_seo_kit"]
+                        st.session_state.parsed_scenes = pipeline_res["parsed_scenes"]
+                        st.session_state.scene_assets = pipeline_res["scene_assets"]
+                        st.session_state.selected_assets = pipeline_res["selected_assets"]
+                        st.success("🎉 Video rendered and merged successfully!")
+                        st.rerun()
+
 
 
 
