@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+venv/
+env/
+ENV/
+
+# Project Generated Media / Downloads
+downloads/
+temp/
+output/
+*.mp4
+*.zip
+*.jpg
+*.jpeg
+*.png
+*.mp3
+*.wav
+
+# System / OS
+.DS_Store
+Thumbs.db
+desktop.ini
+=
