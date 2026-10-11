@@ -465,11 +465,13 @@ def process_scene_clip(
         "-map", "[v]",
         "-map", "[a]",
         "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-crf", "20",
+        "-preset", "veryfast",
+        "-crf", "24",
+        "-maxrate", "3500k",
+        "-bufsize", "7000k",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
-        "-b:a", "192k",
+        "-b:a", "128k",
         "-t", str(duration),
         "-movflags", "+faststart",
         str(output_path)
@@ -516,8 +518,8 @@ def process_scene_clip(
                     "-filter_complex", fb_complex,
                     "-map", "[v]",
                     "-map", "[a]",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k", "-t", str(duration), "-movflags", "+faststart",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "3500k", "-bufsize", "7000k", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "128k", "-t", str(duration), "-movflags", "+faststart",
                     str(output_path)
                 ]
                 res_fb = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=100)
@@ -614,8 +616,8 @@ def add_background_music_to_video(
             "-filter_complex", filter_complex,
             "-map", "0:v",
             "-map", "[aout]",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "3500k", "-bufsize", "7000k",
+            "-c:a", "aac", "-b:a", "128k",
             "-t", str(dur),
             "-movflags", "+faststart",
             str(output_path)
@@ -677,10 +679,13 @@ def merge_clips_to_final_video(clip_paths: List[Path], output_video_path: Path) 
             "-map", "[v]",
             "-map", "[a]",
             "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "20",
+            "-preset", "veryfast",
+            "-crf", "24",
+            "-maxrate", "3500k",
+            "-bufsize", "7000k",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
+            "-b:a", "128k",
             "-movflags", "+faststart",
             str(output_video_path)
         ]

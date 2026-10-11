@@ -2250,7 +2250,7 @@ with tab1:
                 with open(merged_path, "rb") as vf:
                     st.download_button(
                         label=f"⬇️ Download Video ({topic_slug}_Video.mp4)",
-                        data=vf.read(),
+                        data=vf,
                         file_name=f"{topic_slug}_Video.mp4",
                         mime="video/mp4",
                         type="primary",
@@ -2263,7 +2263,7 @@ with tab1:
                         with open(zip_p, "rb") as zf:
                             st.download_button(
                                 label=f"📦 Download Archive ({topic_slug}_Clips_and_Audio.zip)",
-                                data=zf.read(),
+                                data=zf,
                                 file_name=f"{topic_slug}_Clips_and_Audio.zip",
                                 mime="application/zip",
                                 use_container_width=True
