@@ -19,6 +19,8 @@ output/
 *.png
 *.mp3
 *.wav
+!bgm/*.mp3
+!bgm/*.wav
 
 # System / OS
 .DS_Store

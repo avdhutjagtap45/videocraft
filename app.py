@@ -1225,8 +1225,12 @@ def run_full_auto_video_pipeline(
     # Merge
     status_container.info("🎬 Merging scene clips with seamless cuts...")
     raw_merged_file = job_dir / f"scenes_merged_{job_timestamp}.mp4"
-    merge_clips_to_final_video(processed_clips, raw_merged_file)
+    merge_ok = merge_clips_to_final_video(processed_clips, raw_merged_file)
     render_bar.progress(0.92)
+
+    if not merge_ok or not raw_merged_file.exists() or raw_merged_file.stat().st_size == 0:
+        status_container.error("❌ Error: Failed to merge scene clips into final video.")
+        return None
 
     final_merged_file = DOWNLOADS_DIR / f"merged_video_{job_timestamp}.mp4"
 
@@ -1244,17 +1248,25 @@ def run_full_auto_video_pipeline(
     if active_bgm_path and active_bgm_path.exists():
         bgm_label = BGM_CATALOG.get(bgm_k, {}).get("name", "Suspense Track")
         status_container.info(f"🎵 Mixing background music ({bgm_label}) under narration...")
-        bgm_ok = add_background_music_to_video(
-            video_path=raw_merged_file,
-            bgm_path=active_bgm_path,
-            output_path=final_merged_file,
-            bgm_volume=bgm_vol,
-            fade_out_duration=2.0
-        )
-        if not bgm_ok or not final_merged_file.exists():
+        try:
+            bgm_ok = add_background_music_to_video(
+                video_path=raw_merged_file,
+                bgm_path=active_bgm_path,
+                output_path=final_merged_file,
+                bgm_volume=bgm_vol,
+                fade_out_duration=2.0
+            )
+            if not bgm_ok or not final_merged_file.exists() or final_merged_file.stat().st_size == 0:
+                shutil.copy2(raw_merged_file, final_merged_file)
+        except Exception as bgm_err:
+            print(f"BGM mixing caught exception: {bgm_err}")
             shutil.copy2(raw_merged_file, final_merged_file)
     else:
         shutil.copy2(raw_merged_file, final_merged_file)
+
+    if not final_merged_file.exists() or final_merged_file.stat().st_size == 0:
+        status_container.error("❌ Error: Final video file could not be verified.")
+        return None
 
     # ZIP
     status_container.info("📦 Packaging assets into numbered ZIP archive...")
@@ -1288,6 +1300,15 @@ def run_full_auto_video_pipeline(
 tab1, tab2 = st.tabs(["🎬 Script to Video", "📊 CSV Batch"])
 
 with tab1:
+    # Mobile Connection Auto-Recovery: Restore most recently generated video if session reset
+    if not st.session_state.get("merged_video"):
+        recent_vids = sorted(DOWNLOADS_DIR.glob("merged_video_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if recent_vids and (time.time() - recent_vids[0].stat().st_mtime) < 1800:
+            st.session_state.merged_video = str(recent_vids[0])
+            recent_zips = sorted(DOWNLOADS_DIR.glob("assets_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if recent_zips:
+                st.session_state.assets_zip = str(recent_zips[0])
+
     has_merged = bool(st.session_state.get("merged_video"))
 
     # =====================================================================
@@ -1328,28 +1349,29 @@ with tab1:
             # Action Buttons Row
             st.write("")
             dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 1.5])
+            video_bytes_data = merged_path.read_bytes()
             with dl_col1:
-                with open(merged_path, "rb") as vf:
-                    st.download_button(
-                        label=f"⬇️ Download Video ({topic_slug}_Video.mp4)",
-                        data=vf,
-                        file_name=f"{topic_slug}_Video.mp4",
-                        mime="video/mp4",
-                        type="primary",
-                        use_container_width=True
-                    )
+                st.download_button(
+                    label=f"⬇️ Download Video ({topic_slug}_Video.mp4)",
+                    data=video_bytes_data,
+                    file_name=f"{topic_slug}_Video.mp4",
+                    mime="video/mp4",
+                    type="primary",
+                    key="btn_top_dl_vid",
+                    use_container_width=True
+                )
             with dl_col2:
                 if st.session_state.get("assets_zip"):
                     zip_p = Path(st.session_state.assets_zip)
                     if zip_p.exists():
-                        with open(zip_p, "rb") as zf:
-                            st.download_button(
-                                label="📦 Download Archive ZIP",
-                                data=zf,
-                                file_name=f"{topic_slug}_Assets.zip",
-                                mime="application/zip",
-                                use_container_width=True
-                            )
+                        st.download_button(
+                            label="📦 Download Archive ZIP",
+                            data=zip_p.read_bytes(),
+                            file_name=f"{topic_slug}_Assets.zip",
+                            mime="application/zip",
+                            key="btn_top_dl_zip",
+                            use_container_width=True
+                        )
             with dl_col3:
                 if st.button("✨ New Video", use_container_width=True, help="Clear and create a fresh video"):
                     for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
@@ -1590,6 +1612,45 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 st.session_state.active_script_content = script_input
                 st.session_state.custom_main_topic = main_topic_input
                 st.rerun()
+
+    # Mobile Quick Download Banner (Right under generate button so mobile users never miss it)
+    if st.session_state.get("merged_video"):
+        bot_video_path = Path(st.session_state.merged_video)
+        if bot_video_path.exists():
+            active_topic_name = st.session_state.get("custom_main_topic") or "YouTube_Video"
+            b_slug = slugify(active_topic_name)
+            st.markdown(f"""
+            <div style="background:#F0FDF4; border:1px solid #86EFAC; border-radius:12px; padding:12px 16px; margin: 14px 0 10px 0;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-weight:800; color:#166534; font-size:0.95rem;">🎬 Video Ready for Download!</span>
+                    <span style="font-size:0.75rem; font-weight:700; color:#15803D; background:#DCFCE7; padding:2px 8px; border-radius:999px;">● Ready</span>
+                </div>
+                <div style="font-size:0.8rem; color:#4B5563; margin-top:4px;">
+                    Download directly below or scroll to the top to preview.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            col_bot_dl1, col_bot_dl2 = st.columns([1, 1])
+            with col_bot_dl1:
+                st.download_button(
+                    label=f"⬇️ Download Video ({b_slug}_Video.mp4)",
+                    data=bot_video_path.read_bytes(),
+                    file_name=f"{b_slug}_Video.mp4",
+                    mime="video/mp4",
+                    type="primary",
+                    key="btn_bottom_quick_dl_vid",
+                    use_container_width=True
+                )
+            with col_bot_dl2:
+                if st.session_state.get("assets_zip") and Path(st.session_state.assets_zip).exists():
+                    st.download_button(
+                        label="📦 Download Assets ZIP",
+                        data=Path(st.session_state.assets_zip).read_bytes(),
+                        file_name=f"{b_slug}_Assets.zip",
+                        mime="application/zip",
+                        key="btn_bottom_quick_dl_zip",
+                        use_container_width=True
+                    )
 
     # Optional Storyboard Review expander
     has_parsed = bool(st.session_state.get("parsed_scenes"))

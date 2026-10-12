@@ -3,6 +3,7 @@ import re
 import time
 import subprocess
 import zipfile
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import requests
@@ -630,40 +631,90 @@ def add_background_music_to_video(
 
 
 def merge_clips_to_final_video(clip_paths: List[Path], output_video_path: Path) -> bool:
-    """Concatenate multiple scene clips into one final video using FFmpeg."""
+    """Concatenate multiple scene clips into one final video using FFmpeg with resilient fallback."""
     if not clip_paths:
         return False
     
     ffmpeg = get_ffmpeg_path()
     output_video_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_dir = output_video_path.parent / "temp_merge"
+    temp_dir = output_video_path.parent / f"temp_merge_{int(time.time()*1000)}"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    
-    concat_list = temp_dir / "concat_list.txt"
-    with open(concat_list, "w", encoding="utf-8") as f:
-        for p in clip_paths:
-            safe_p = str(p.resolve()).replace("\\", "/")
-            f.write(f"file '{safe_p}'\n")
 
-    # Fast stream-copy concat
-    cmd = [
-        ffmpeg, "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(concat_list),
-        "-c", "copy",
-        "-movflags", "+faststart",
-        str(output_video_path)
-    ]
-
+    # Strategy 1: TS Transmux Concat (The gold standard: 0.5s, 0 re-encoding, perfectly resolves MP4 timestamp/timescale mismatch)
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        ts_files = []
+        transmux_ok = True
+        for idx, p in enumerate(clip_paths):
+            if not p.exists() or p.stat().st_size == 0:
+                transmux_ok = False
+                break
+            ts_p = temp_dir / f"clip_{idx}.ts"
+            cmd_ts = [
+                ffmpeg, "-y",
+                "-i", str(p),
+                "-c", "copy",
+                "-bsf:v", "h264_mp4toannexb",
+                "-f", "mpegts",
+                str(ts_p)
+            ]
+            r_ts = subprocess.run(cmd_ts, capture_output=True, text=True, timeout=30)
+            if r_ts.returncode == 0 and ts_p.exists() and ts_p.stat().st_size > 0:
+                ts_files.append(ts_p)
+            else:
+                transmux_ok = False
+                break
+
+        if transmux_ok and len(ts_files) == len(clip_paths):
+            ts_concat_list = temp_dir / "ts_concat_list.txt"
+            with open(ts_concat_list, "w", encoding="utf-8") as f:
+                for ts_p in ts_files:
+                    safe_p = str(ts_p.resolve()).replace("\\", "/")
+                    f.write(f"file '{safe_p}'\n")
+
+            cmd_ts_merge = [
+                ffmpeg, "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(ts_concat_list),
+                "-c", "copy",
+                "-bsf:a", "aac_adtstoasc",
+                "-movflags", "+faststart",
+                str(output_video_path)
+            ]
+            r_tm = subprocess.run(cmd_ts_merge, capture_output=True, text=True, timeout=60)
+            if r_tm.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return True
+    except Exception as e_ts:
+        print(f"TS transmux concat error: {e_ts}")
+
+    # Strategy 2: Fast MP4 Concat Demuxer with -fflags +genpts and timestamp realignment
+    try:
+        concat_list = temp_dir / "concat_list.txt"
+        with open(concat_list, "w", encoding="utf-8") as f:
+            for p in clip_paths:
+                safe_p = str(p.resolve()).replace("\\", "/")
+                f.write(f"file '{safe_p}'\n")
+
+        cmd = [
+            ffmpeg, "-y",
+            "-fflags", "+genpts",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_list),
+            "-c", "copy",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            str(output_video_path)
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
             return True
     except Exception as e:
-        print(f"Concat stream copy failed: {e}")
+        print(f"Direct concat stream copy failed: {e}")
 
-    # Fallback to re-encoding concat filter
+    # Strategy 3: Low-memory safe re-encoding fallback (ultrafast, low threads/buffer to prevent cloud OOM)
     try:
         inputs = []
         filter_parts = []
@@ -679,20 +730,22 @@ def merge_clips_to_final_video(clip_paths: List[Path], output_video_path: Path) 
             "-map", "[v]",
             "-map", "[a]",
             "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "24",
-            "-maxrate", "3500k",
-            "-bufsize", "7000k",
+            "-preset", "ultrafast",
+            "-crf", "25",
+            "-threads", "2",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "128k",
             "-movflags", "+faststart",
             str(output_video_path)
         ]
-        res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=240)
-        return res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0
+        res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=180)
+        ok = res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return ok
     except Exception as e:
         print(f"Fallback concat error: {e}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
         return False
 
 def make_numbered_zip(file_paths: List[Path], zip_output_path: Path) -> bool:
