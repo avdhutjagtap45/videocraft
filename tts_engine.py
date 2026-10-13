@@ -17,8 +17,17 @@ from video_engine import get_ffmpeg_path
 _tts_lock = threading.Lock()
 
 VOICE_CATALOG = {
-    "hi-IN-MadhurNeural": "🇮🇳 Madhur (Hindi / Indian Accent Male - Deep & Cinematic)",
-    "hi-IN-SwaraNeural": "🇮🇳 Swara (Hindi / Indian Accent Female - Expressive & Clear)",
+    # 🇮🇳 Hindi & Hinglish Voices (Ultra-Realistic Human Narrators)
+    "hi-IN-MadhurNeural": "🇮🇳 Madhur (Hindi Male - Deep & Cinematic Storyteller)",
+    "hi-IN-SwaraNeural": "🇮🇳 Swara (Hindi Female - Expressive & Clear Narration)",
+    "en-IN-PrabhatNeural": "🇮🇳 Prabhat (Hinglish Male - Modern YouTube Creator)",
+    "en-IN-NeerjaExpressiveNeural": "🇮🇳 Neerja (Hinglish Female - Ultra Expressive)",
+
+    # 🚩 Marathi Voices (Ultra-Realistic Human Narrators)
+    "mr-IN-ManoharNeural": "🚩 Manohar (Marathi Male - Deep & Realistic Storyteller)",
+    "mr-IN-AarohiNeural": "🚩 Aarohi (Marathi Female - Natural & Clear Narration)",
+
+    # 🇺🇸 & 🇬🇧 English Global Voices
     "en-US-ChristopherNeural": "🇺🇸 Christopher (Storyteller Male - Documentary / Mystery)",
     "en-US-JennyNeural": "🇺🇸 Jenny (Natural Crisp Female - Clean Narration)",
     "en-US-GuyNeural": "🇺🇸 Guy (Casual Male - Modern Vlogger)",
@@ -94,10 +103,14 @@ def _synthesize_gtts_fallback(text: str, voice: str, output_path: Path, rate: st
         if not clean_text:
             return False
 
-        # Detect Hindi vs English
+        # Detect Marathi vs Hindi vs English
         has_devanagari = any('\u0900' <= ch <= '\u097f' for ch in clean_text)
-        is_hindi = "hi-IN" in voice or has_devanagari
-        lang_code = "hi" if is_hindi else "en"
+        if "mr-IN" in voice:
+            lang_code = "mr"
+        elif "hi-IN" in voice or has_devanagari:
+            lang_code = "hi"
+        else:
+            lang_code = "en"
 
         temp_raw = output_path.parent / f"_raw_gtts_{int(time.time()*1000)}.mp3"
         tts = gTTS(text=clean_text, lang=lang_code, slow=False)

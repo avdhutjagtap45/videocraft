@@ -91,8 +91,12 @@ try:
     from tts_engine import generate_human_voiceover, estimate_speech_duration, get_audio_duration, VOICE_CATALOG, DEFAULT_VOICE
 except ImportError:
     VOICE_CATALOG = {
-        "hi-IN-MadhurNeural": "🇮🇳 Madhur (Hindi / Indian Accent Male - Deep & Cinematic)",
-        "hi-IN-SwaraNeural": "🇮🇳 Swara (Hindi / Indian Accent Female - Expressive & Clear)",
+        "hi-IN-MadhurNeural": "🇮🇳 Madhur (Hindi Male - Deep & Cinematic Storyteller)",
+        "hi-IN-SwaraNeural": "🇮🇳 Swara (Hindi Female - Expressive & Clear Narration)",
+        "en-IN-PrabhatNeural": "🇮🇳 Prabhat (Hinglish Male - Modern YouTube Creator)",
+        "en-IN-NeerjaExpressiveNeural": "🇮🇳 Neerja (Hinglish Female - Ultra Expressive)",
+        "mr-IN-ManoharNeural": "🚩 Manohar (Marathi Male - Deep & Realistic Storyteller)",
+        "mr-IN-AarohiNeural": "🚩 Aarohi (Marathi Female - Natural & Clear Narration)",
         "en-US-ChristopherNeural": "🇺🇸 Christopher (Storyteller Male - Documentary / Mystery)",
         "en-US-JennyNeural": "🇺🇸 Jenny (Natural Crisp Female - Clean Narration)"
     }
@@ -902,14 +906,14 @@ if hasattr(st, "dialog"):
         </div>
         """, unsafe_allow_html=True)
 
-        lang_tab1, lang_tab2 = st.tabs(["🇮🇳 Hindi / Indian Voices", "🇺🇸 English Voices"])
+        lang_tab1, lang_tab2, lang_tab3 = st.tabs(["🇮🇳 Hindi & Hinglish", "🚩 Marathi (मराठी)", "🇺🇸 English Voices"])
 
         with lang_tab1:
-            hindi_voices = {k: v for k, v in VOICE_CATALOG.items() if "hi-IN" in k}
+            hindi_voices = {k: v for k, v in VOICE_CATALOG.items() if "hi-IN" in k or "en-IN" in k}
             curr_v = st.session_state.get("selected_voice", DEFAULT_VOICE)
             h_idx = list(hindi_voices.keys()).index(curr_v) if curr_v in hindi_voices else 0
             h_choice = st.radio(
-                "Select Hindi Voice Model:",
+                "Select Hindi / Hinglish Voice Model:",
                 options=list(hindi_voices.keys()),
                 format_func=lambda k: hindi_voices[k],
                 index=h_idx,
@@ -917,20 +921,45 @@ if hasattr(st, "dialog"):
             )
             col_dh1, col_dh2 = st.columns(2)
             with col_dh1:
-                if st.button("🎧 Listen Hindi Sample", key="dialog_btn_h_sample", use_container_width=True):
+                if st.button("🎧 Listen Sample", key="dialog_btn_h_sample", use_container_width=True):
                     sample_p = DOWNLOADS_DIR / f"sample_{h_choice}.mp3"
                     with st.spinner("Synthesizing Hindi sample..."):
-                        dur = generate_human_voiceover("Namaste dosto. Yeh voiceover aapke YouTube video ke liye ready hai.", sample_p, voice=h_choice)
+                        dur = generate_human_voiceover("Namaste dosto. Yeh human voiceover aapke YouTube video ke liye ready hai.", sample_p, voice=h_choice)
                         if sample_p.exists():
                             st.audio(str(sample_p), format="audio/mp3")
             with col_dh2:
-                if st.button("✅ Apply Hindi Voice", type="primary", key="btn_apply_hindi", use_container_width=True):
+                if st.button("✅ Apply Voice", type="primary", key="btn_apply_hindi", use_container_width=True):
                     st.session_state.selected_voice = h_choice
                     st.success(f"Selected: {VOICE_CATALOG.get(h_choice, h_choice)}!")
                     st.rerun()
 
         with lang_tab2:
-            eng_voices = {k: v for k, v in VOICE_CATALOG.items() if "en-" in k}
+            marathi_voices = {k: v for k, v in VOICE_CATALOG.items() if "mr-IN" in k}
+            curr_v = st.session_state.get("selected_voice", DEFAULT_VOICE)
+            m_idx = list(marathi_voices.keys()).index(curr_v) if curr_v in marathi_voices else 0
+            m_choice = st.radio(
+                "Select Marathi Voice Model (मराठी आवाज):",
+                options=list(marathi_voices.keys()),
+                format_func=lambda k: marathi_voices[k],
+                index=m_idx,
+                key="dialog_marathi_voice"
+            )
+            col_dm1, col_dm2 = st.columns(2)
+            with col_dm1:
+                if st.button("🎧 Listen Marathi Sample", key="dialog_btn_m_sample", use_container_width=True):
+                    sample_p = DOWNLOADS_DIR / f"sample_{m_choice}.mp3"
+                    with st.spinner("Synthesizing Marathi sample..."):
+                        dur = generate_human_voiceover("नमस्कार मित्रांनो. हे व्हॉईसओव्हर तुमच्या युट्यूब व्हिडिओसाठी तयार आहे.", sample_p, voice=m_choice)
+                        if sample_p.exists():
+                            st.audio(str(sample_p), format="audio/mp3")
+            with col_dm2:
+                if st.button("✅ Apply Marathi Voice", type="primary", key="btn_apply_marathi", use_container_width=True):
+                    st.session_state.selected_voice = m_choice
+                    st.success(f"Selected: {VOICE_CATALOG.get(m_choice, m_choice)}!")
+                    st.rerun()
+
+        with lang_tab3:
+            eng_voices = {k: v for k, v in VOICE_CATALOG.items() if "en-US" in k or "en-GB" in k}
             curr_v = st.session_state.get("selected_voice", DEFAULT_VOICE)
             e_idx = list(eng_voices.keys()).index(curr_v) if curr_v in eng_voices else 0
             e_choice = st.radio(
@@ -1656,13 +1685,17 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                     "🎙️ Voice narrator",
                     options=voice_keys,
                     format_func=lambda k: {
-                        "hi-IN-MadhurNeural": "IN Madhur (Natural)",
-                        "hi-IN-SwaraNeural": "IN Swara (Female)",
-                        "en-US-ChristopherNeural": "US Christopher (Narrator)",
-                        "en-US-JennyNeural": "US Jenny (Clear Female)",
-                        "en-US-GuyNeural": "US Guy (Modern Vlogger)",
-                        "en-US-AriaNeural": "US Aria (Studio Female)",
-                        "en-GB-RyanNeural": "GB Ryan (British Male)"
+                        "hi-IN-MadhurNeural": "🇮🇳 Madhur (Hindi Male - Deep)",
+                        "hi-IN-SwaraNeural": "🇮🇳 Swara (Hindi Female - Clear)",
+                        "en-IN-PrabhatNeural": "🇮🇳 Prabhat (Hinglish Male)",
+                        "en-IN-NeerjaExpressiveNeural": "🇮🇳 Neerja (Hinglish Female)",
+                        "mr-IN-ManoharNeural": "🚩 Manohar (Marathi Male - Story)",
+                        "mr-IN-AarohiNeural": "🚩 Aarohi (Marathi Female - Clear)",
+                        "en-US-ChristopherNeural": "🇺🇸 Christopher (US Storyteller)",
+                        "en-US-JennyNeural": "🇺🇸 Jenny (US Female)",
+                        "en-US-GuyNeural": "🇺🇸 Guy (US Vlogger)",
+                        "en-US-AriaNeural": "🇺🇸 Aria (US Professional)",
+                        "en-GB-RyanNeural": "🇬🇧 Ryan (British Male)"
                     }.get(k, VOICE_CATALOG.get(k, k).split('(')[0].strip()),
                     index=idx_v
                 )
@@ -1672,7 +1705,15 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 if st.button("▶️", help="Preview sample voice", key="btn_quick_voice_play"):
                     sample_file = DOWNLOADS_DIR / f"sample_{selected_voice}.mp3"
                     if not sample_file.exists():
-                        generate_human_voiceover("Welcome to VideoCraft Studio. Voice narration is ready.", sample_file, voice=selected_voice)
+                        if "mr-IN" in selected_voice:
+                            p_txt = "नमस्कार मित्रांनो. हे व्हॉईसओव्हर तुमच्या युट्यूब व्हिडिओसाठी तयार आहे."
+                        elif "hi-IN" in selected_voice:
+                            p_txt = "नमस्ते दोस्तों. यह वॉइसओवर आपके यूट्यूब वीडियो के लिए तैयार है."
+                        elif "en-IN" in selected_voice:
+                            p_txt = "Hello creators. This Hinglish voiceover is ready for your YouTube video."
+                        else:
+                            p_txt = "Welcome to VideoCraft Studio. Voice narration is ready."
+                        generate_human_voiceover(p_txt, sample_file, voice=selected_voice)
                     if sample_file.exists():
                         st.audio(str(sample_file), format="audio/mp3", autoplay=True)
 
@@ -1745,14 +1786,19 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         with col_gen1:
             creator_topic_input = st.text_input("Enter Topic / Idea:", value=st.session_state.get("current_topic", ""), placeholder="e.g. Lost City of Atlantis, Psychology of Money...")
         with col_gen2:
-            creator_lang = st.selectbox("Language / Style:", ["🇮🇳 Hinglish / Hindi (Viral)", "🇺🇸 English (Documentary)"], index=0)
+            creator_lang = st.selectbox("Language / Style:", ["🇮🇳 Hinglish / Hindi (Viral)", "🚩 Marathi (मराठी)", "🇺🇸 English (Documentary)"], index=0)
 
         if st.button("✨ Write Script with AI", use_container_width=True, key="btn_gen_creator_script"):
             if not creator_topic_input.strip():
                 st.warning("Please type a topic first.")
             else:
                 with st.spinner("⚡ Writing high-retention script..."):
-                    lang_str = "Hinglish" if "Hinglish" in creator_lang else "English"
+                    if "Marathi" in creator_lang:
+                        lang_str = "Marathi"
+                    elif "Hinglish" in creator_lang or "Hindi" in creator_lang:
+                        lang_str = "Hinglish"
+                    else:
+                        lang_str = "English"
                     gen_res = generate_creator_scripts_and_shorts(creator_topic_input, language=lang_str, openai_key=openai_key)
                     st.session_state.generated_creator_pack = gen_res
                     st.session_state.current_topic = gen_res["topic"]

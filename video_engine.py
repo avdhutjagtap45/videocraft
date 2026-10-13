@@ -56,6 +56,23 @@ def get_ffmpeg_path() -> str:
     """Returns absolute path to the bundled FFmpeg binary."""
     return imageio_ffmpeg.get_ffmpeg_exe()
 
+def _ensure_whoosh_sfx() -> Path:
+    """Guarantees a clean, subtle transition whoosh SFX exists in the bgm directory."""
+    whoosh_path = BGM_DIR / "whoosh.mp3"
+    if not whoosh_path.exists() or whoosh_path.stat().st_size == 0:
+        try:
+            ffmpeg = get_ffmpeg_path()
+            subprocess.run([
+                ffmpeg, "-y", "-f", "lavfi",
+                "-i", "anoisesrc=color=pink:duration=0.35:amplitude=0.35,bandpass=f=900:width_type=h:width=700,afade=t=in:st=0:d=0.10,afade=t=out:st=0.10:d=0.25,volume=0.25",
+                str(whoosh_path)
+            ], capture_output=True, timeout=10)
+        except Exception:
+            pass
+    return whoosh_path
+
+_ensure_whoosh_sfx()
+
 
 def download_file(url: str, dest_path: Path, timeout: int = 150) -> bool:
     """Download a remote media file with streaming or copy local media file (supports large 1GB+ files)."""
@@ -191,7 +208,10 @@ def _is_script_trigger_word(word: str, line_words: Optional[List[str]] = None, w
         'shocking', 'terrifying', 'danger', 'dangerous', 'forbidden', 'hidden',
         'ancient', 'alien', 'aliens', 'lie', 'lies', 'proof', 'warning',
         'strange', 'weird', 'unexplained', 'never', 'banned', 'lost',
-        'rahasya', 'khatarnak', 'sach', 'jhooth', 'chamatkar', 'asambhav', 'anokha'
+        'insane', 'unbelievable', 'mindblowing', 'dark', 'monster', 'gold',
+        'death', 'dead', 'cursed', 'haunted', 'killer', 'conspiracy', 'billion', 'million',
+        'rahasya', 'khatarnak', 'sach', 'jhooth', 'chamatkar', 'asambhav', 'anokha',
+        'khazana', 'mout', 'khooni', 'shrapit', 'bhoot', 'chupaya', 'gayab', 'duniya'
     }
     if clean in power_keywords:
         return True
@@ -459,14 +479,17 @@ def process_scene_clip(
     audio_path: Optional[Path] = None,
     fit_mode: str = "cover",
     ken_burns_style: str = "auto",
-    scene_index: int = 0
+    scene_index: int = 0,
+    cinematic_grade: bool = True,
+    whoosh_sfx: bool = True
 ) -> bool:
     """
     Master Human Pro Video Processor:
     - Ken Burns dynamic documentary camera zoom for photos (alternating Zoom-In, Zoom-Out, Pan)
     - Loops and normalizes video clips to exact audio duration seamlessly
     - Muxes natural human speech voiceover audio track
-    - Direct, crisp cuts between scenes (no immersion-breaking black flash dips)
+    - Smooth Whoosh audio transition on scene cuts (high sensory retention)
+    - Pro documentary cinematic color grading (vignette + contrast pop)
     - High-bitrate H.264 + AAC audio encoding with Web faststart
     """
     ffmpeg = get_ffmpeg_path()
@@ -525,6 +548,10 @@ def process_scene_clip(
         base_video_filter = scale_filter
         cmd += ["-stream_loop", "-1", "-ss", "0", "-t", str(duration), "-i", str(media_path)]
 
+    # Pro Documentary Color Grade & Vignette (rich contrast & cinematic edge depth)
+    if cinematic_grade:
+        base_video_filter += ",vignette=PI/4,eq=contrast=1.06:saturation=1.10"
+
     input_count = 1
     overlay_input_idx = None
     if overlay_path and overlay_path.exists():
@@ -532,18 +559,40 @@ def process_scene_clip(
         overlay_input_idx = input_count
         input_count += 1
 
-    # Audio track (Voiceover speech or silent baseline)
+    # Audio track (Voiceover speech + optional Scene-Cut Whoosh SFX)
     has_custom_audio = bool(audio_path and Path(audio_path).exists() and Path(audio_path).stat().st_size > 0)
-    if has_custom_audio:
-        cmd += ["-i", str(audio_path)]
-        audio_input_idx = input_count
+    whoosh_file = BGM_DIR / "whoosh.mp3"
+    use_whoosh = bool(whoosh_sfx and scene_index > 0 and whoosh_file.exists())
+
+    if use_whoosh:
+        cmd += ["-i", str(whoosh_file)]
+        whoosh_input_idx = input_count
         input_count += 1
-        audio_filter = f"[{audio_input_idx}:a]volume=1.25,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+
+        if has_custom_audio:
+            cmd += ["-i", str(audio_path)]
+            audio_input_idx = input_count
+            input_count += 1
+            audio_filter = (
+                f"[{whoosh_input_idx}:a]volume=0.28,apad=whole_dur={duration}[w_a];"
+                f"[{audio_input_idx}:a]volume=1.25,apad=whole_dur={duration}[v_a];"
+                f"[v_a][w_a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,aformat=channel_layouts=stereo:sample_rates=44100[a]"
+            )
+        else:
+            audio_filter = (
+                f"[{whoosh_input_idx}:a]volume=0.28,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+            )
     else:
-        cmd += ["-f", "lavfi", "-t", str(duration), "-i", "anullsrc=r=44100:cl=stereo"]
-        audio_input_idx = input_count
-        input_count += 1
-        audio_filter = f"[{audio_input_idx}:a]aformat=channel_layouts=stereo:sample_rates=44100[a]"
+        if has_custom_audio:
+            cmd += ["-i", str(audio_path)]
+            audio_input_idx = input_count
+            input_count += 1
+            audio_filter = f"[{audio_input_idx}:a]volume=1.25,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+        else:
+            cmd += ["-f", "lavfi", "-t", str(duration), "-i", "anullsrc=r=44100:cl=stereo"]
+            audio_input_idx = input_count
+            input_count += 1
+            audio_filter = f"[{audio_input_idx}:a]aformat=channel_layouts=stereo:sample_rates=44100[a]"
 
     if overlay_input_idx is not None:
         filter_complex = f"[0:v]{base_video_filter}[bg];[bg][{overlay_input_idx}:v]overlay=0:0[v];{audio_filter}"
@@ -598,7 +647,10 @@ def process_scene_clip(
                     fb_in_count += 1
                     fb_a_filter = f"[{fb_a_idx}:a]aformat=channel_layouts=stereo:sample_rates=44100[a]"
 
-                v_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1,fps=30[bg]"
+                v_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1,fps=30"
+                if cinematic_grade:
+                    v_filter += ",vignette=PI/4,eq=contrast=1.06:saturation=1.10"
+                v_filter += "[bg]"
                 if fb_overlay_idx is not None:
                     fb_complex = f"{v_filter};[bg][{fb_overlay_idx}:v]overlay=0:0[v];{fb_a_filter}"
                 else:
