@@ -1349,6 +1349,10 @@ with tab1:
             # Embedded Video Player
             st.video(str(merged_path))
 
+            with st.expander("🔊 Audio Track & Voiceover Check (Tap to test audio)", expanded=False):
+                st.audio(str(merged_path), format="audio/mp4")
+                st.caption("💡 Mobile Tip: Agar mobile pe voice nahi sunai de rahi to device ka Silent Mode/Mute switch OFF karein aur Media Volume badhayein.")
+
             # Action Buttons Row
             st.write("")
             dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 1.5])

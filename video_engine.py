@@ -462,7 +462,7 @@ def process_scene_clip(
         cmd += ["-i", str(audio_path)]
         audio_input_idx = input_count
         input_count += 1
-        audio_filter = f"[{audio_input_idx}:a]volume=1.05,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+        audio_filter = f"[{audio_input_idx}:a]volume=1.25,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
     else:
         cmd += ["-f", "lavfi", "-t", str(duration), "-i", "anullsrc=r=44100:cl=stereo"]
         audio_input_idx = input_count
@@ -599,15 +599,15 @@ def add_background_music_to_video(
 
     st_fade = max(0.0, dur - fade_out_duration)
     # Master Cinematic Sidechain Ducking:
-    # When narrator speaks, BGM ducks automatically. During natural voice pauses, BGM smoothly swells up!
-    bgm_peak = min(0.35, max(0.18, bgm_volume * 2.0))
+    # Voice is boosted (+30%) and BGM is gracefully ducked during narration.
+    bgm_peak = min(0.20, max(0.08, bgm_volume * 1.5))
     filter_complex = (
         f"[1:a]volume={bgm_peak:.3f},"
         f"afade=t=in:st=0:d=1.0,"
         f"afade=t=out:st={st_fade:.2f}:d={fade_out_duration:.2f},"
         f"aformat=channel_layouts=stereo:sample_rates=44100[bgm_raw];"
-        f"[0:a]volume=1.05,aformat=channel_layouts=stereo:sample_rates=44100[narr];"
-        f"[bgm_raw][narr]sidechaincompress=threshold=0.10:ratio=6:attack=80:release=400[ducked_bgm];"
+        f"[0:a]volume=1.30,aformat=channel_layouts=stereo:sample_rates=44100[narr];"
+        f"[bgm_raw][narr]sidechaincompress=threshold=0.03:ratio=8:attack=40:release=350[ducked_bgm];"
         f"[narr][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
     )
 
@@ -634,17 +634,17 @@ def add_background_music_to_video(
     except Exception as e:
         print(f"Sidechain BGM exception: {e}")
 
-    # Fallback to standard amix ducking
+    # Fallback 2: Standard amix ducking with video stream copy
     filter_complex_amix = (
         f"[1:a]volume={bgm_volume:.3f},"
         f"afade=t=in:st=0:d=1.0,"
         f"afade=t=out:st={st_fade:.2f}:d={fade_out_duration:.2f},"
         f"aformat=channel_layouts=stereo:sample_rates=44100[bgm];"
-        f"[0:a]volume=1.0,aformat=channel_layouts=stereo:sample_rates=44100[narr];"
+        f"[0:a]volume=1.30,aformat=channel_layouts=stereo:sample_rates=44100[narr];"
         f"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
     )
 
-    cmd = [
+    cmd_amix = [
         ffmpeg, "-y",
         "-i", str(video_path),
         "-stream_loop", "-1", "-i", str(bgm_path),
@@ -657,14 +657,20 @@ def add_background_music_to_video(
         "-movflags", "+faststart",
         str(output_path)
     ]
+    try:
+        res2 = subprocess.run(cmd_amix, capture_output=True, text=True, timeout=180)
+        if res2.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+            return True
+    except Exception as e_amix:
+        print(f"Amix fallback error: {e_amix}")
 
-    # Fallback: re-encode video if copy failed on specific container
+    # Fallback 3: Re-encode video if stream copy container failed
     try:
         cmd_fb = [
             ffmpeg, "-y",
             "-i", str(video_path),
             "-stream_loop", "-1", "-i", str(bgm_path),
-            "-filter_complex", filter_complex,
+            "-filter_complex", filter_complex_amix,
             "-map", "0:v",
             "-map", "[aout]",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "3500k", "-bufsize", "7000k",
@@ -732,21 +738,34 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
             
             # If copy failed (e.g. audio missing or incompatible codec), transmux with audio fallback
             if r_ts.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
-                cmd_ts_fix = [
+                # 1. First attempt: re-encode audio to AAC to preserve speech if clip has sound
+                cmd_ts_rec = [
                     ffmpeg, "-y",
                     "-i", str(p),
-                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
                     "-c:v", "copy",
                     "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-                    "-shortest",
                     "-bsf:v", "h264_mp4toannexb",
                     "-f", "mpegts",
                     str(ts_p)
                 ]
-                r_fix = subprocess.run(cmd_ts_fix, capture_output=True, text=True, timeout=50)
-                if r_fix.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
-                    transmux_ok = False
-                    break
+                r_rec = subprocess.run(cmd_ts_rec, capture_output=True, text=True, timeout=50)
+                if r_rec.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
+                    # 2. Only if clip literally had no audio stream, inject silent baseline
+                    cmd_ts_fix = [
+                        ffmpeg, "-y",
+                        "-i", str(p),
+                        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                        "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+                        "-shortest",
+                        "-bsf:v", "h264_mp4toannexb",
+                        "-f", "mpegts",
+                        str(ts_p)
+                    ]
+                    r_fix = subprocess.run(cmd_ts_fix, capture_output=True, text=True, timeout=50)
+                    if r_fix.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
+                        transmux_ok = False
+                        break
 
             ts_files.append(ts_p)
 
