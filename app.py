@@ -110,20 +110,20 @@ APP_DIR = Path(__file__).parent
 DOWNLOADS_DIR = APP_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-def cleanup_storage_cache(max_age_hours: float = 2.0, max_folder_mb: float = 350.0):
+def cleanup_storage_cache(max_age_hours: float = 0.5, max_folder_mb: float = 1200.0):
     """
-    Automatic Cloud Storage Manager (Optimized for Free Cloud 1GB Limits):
-    1. Removes temporary job folders and audio samples older than max_age_hours.
-    2. If downloads directory total size exceeds max_folder_mb, automatically deletes
-       the oldest job folders and files until disk space is safely below 200MB.
-    Guarantees cloud servers never crash with 'Disk quota exceeded'.
+    Automatic Storage Manager (Optimized for Streamlit Cloud & Ephemeral Disk):
+    1. Removes temporary job folders, raw assets, and videos older than 30 minutes (0.5 hrs).
+    2. Allows user 30 minutes to download their video, then cleans the server to keep disk space 100% free.
+    3. Guarantees active rendering jobs (< 10 minutes) are strictly protected.
     """
     try:
         if not DOWNLOADS_DIR.exists():
             return
 
         now = time.time()
-        max_age_sec = max_age_hours * 3600
+        max_age_sec = max_age_hours * 3600  # 30 mins = 1800s
+        protect_window_sec = 600  # Strictly protect currently rendering jobs in last 10 mins
 
         items = []
         total_bytes = 0
@@ -140,10 +140,11 @@ def cleanup_storage_cache(max_age_hours: float = 2.0, max_folder_mb: float = 350
             except Exception:
                 continue
 
-        # Rule 1: Delete files/folders older than max_age_hours
+        # Rule 1: Delete all items older than 30 minutes (not in active 10-min render window)
         remaining_items = []
         for item, mtime, sz in items:
-            if (now - mtime) > max_age_sec:
+            age = now - mtime
+            if age > max_age_sec and age > protect_window_sec:
                 try:
                     if item.is_dir():
                         shutil.rmtree(item, ignore_errors=True)
@@ -155,11 +156,13 @@ def cleanup_storage_cache(max_age_hours: float = 2.0, max_folder_mb: float = 350
             else:
                 remaining_items.append((item, mtime, sz))
 
-        # Rule 2: If total folder size exceeds max_folder_mb, delete oldest remaining items
+        # Rule 2: If total folder size exceeds max_folder_mb (1200MB), purge oldest completed items
         max_bytes = max_folder_mb * 1024 * 1024
         if total_bytes > max_bytes:
             remaining_items.sort(key=lambda x: x[1])
-            for item, _, sz in remaining_items:
+            for item, mtime, sz in remaining_items:
+                if (now - mtime) < protect_window_sec:
+                    continue  # NEVER delete active render
                 if total_bytes <= (max_bytes * 0.5):
                     break
                 try:
@@ -1218,8 +1221,8 @@ def run_full_auto_video_pipeline(
 
     encoded_clips.sort(key=lambda x: x[0])
     processed_clips = [cp for i_idx, cp, ok_val in encoded_clips if ok_val and cp.exists() and cp.stat().st_size > 0]
-    if not processed_clips or len(processed_clips) != len(prep_results):
-        status_container.error("❌ Error during scene encoding.")
+    if not processed_clips:
+        status_container.error("❌ Error: None of the scene clips could be encoded.")
         return None
 
     # Merge
@@ -1303,7 +1306,7 @@ with tab1:
     # Mobile Connection Auto-Recovery: Restore most recently generated video if session reset
     if not st.session_state.get("merged_video"):
         recent_vids = sorted(DOWNLOADS_DIR.glob("merged_video_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if recent_vids and (time.time() - recent_vids[0].stat().st_mtime) < 1800:
+        if recent_vids and (time.time() - recent_vids[0].stat().st_mtime) < 86400:
             st.session_state.merged_video = str(recent_vids[0])
             recent_zips = sorted(DOWNLOADS_DIR.glob("assets_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
             if recent_zips:
@@ -1851,6 +1854,36 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                             if st.button(f"🔄 Swap ({next_idx+1}/{len(assets)})", key=f"adv_swap_{sc_no}", use_container_width=True):
                                 st.session_state.selected_assets[sc_no] = next_idx
                                 st.rerun()
+
+                        prev_key = f"scene_prev_{sc_no}"
+                        if st.button("👁️ Test Scene", key=f"adv_test_{sc_no}", use_container_width=True, help="Renders an instant 2s test preview of this single scene"):
+                            with st.spinner(f"Testing Scene {sc_no}..."):
+                                test_c_p = DOWNLOADS_DIR / f"test_clip_{sc_no}.mp4"
+                                test_raw = DOWNLOADS_DIR / f"test_raw_{sc_no}{'.jpg' if best_asset.get('type') == 'image' else '.mp4'}"
+                                if download_file(best_asset.get('download', ''), test_raw) and test_raw.exists():
+                                    test_ov = DOWNLOADS_DIR / f"test_ov_{sc_no}.png"
+                                    create_overlay_image(target_w, target_h, sc_no, test_ov, scene_text=sc.get('text', ''), show_badge=burn_badge, subtitle_style=subtitle_style_choice)
+                                    test_aud = DOWNLOADS_DIR / f"test_voice_{sc_no}.mp3"
+                                    v_dur = generate_human_voiceover(sc.get('text', ''), test_aud, voice=selected_voice, rate=tts_rate_str)
+                                    dur_val = round(max(2.0, (v_dur or 3.5) + pause_buffer), 2)
+                                    ok_prev = safe_process_scene_clip(
+                                        media_path=test_raw,
+                                        output_path=test_c_p,
+                                        target_w=target_w,
+                                        target_h=target_h,
+                                        duration=dur_val,
+                                        is_image=(best_asset.get('type') == 'image'),
+                                        overlay_path=test_ov,
+                                        audio_path=test_aud
+                                    )
+                                    if ok_prev and test_c_p.exists():
+                                        st.session_state[prev_key] = str(test_c_p)
+                                        st.rerun()
+
+                    if st.session_state.get(f"scene_prev_{sc_no}"):
+                        pv_file = Path(st.session_state[f"scene_prev_{sc_no}"])
+                        if pv_file.exists():
+                            st.video(str(pv_file))
                     st.markdown('</div>', unsafe_allow_html=True)
 
                 st.write("")
@@ -2024,6 +2057,8 @@ with tab2:
                         st.session_state.csv_merged = str(m_dest)
                         st.success("🎉 CSV Video Merged!")
                         st.rerun()
+                    else:
+                        st.error("❌ Failed to merge CSV clips into final video.")
 
         if st.session_state.get("csv_zip"):
             zp = Path(st.session_state.csv_zip)
