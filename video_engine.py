@@ -551,7 +551,7 @@ def process_scene_clip(
         filter_complex = f"[0:v]{base_video_filter}[v];{audio_filter}"
 
     cmd += [
-        "-threads", "0",
+        "-threads", "2",
         "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", "[a]",
@@ -605,7 +605,7 @@ def process_scene_clip(
                     fb_complex = f"{v_filter.replace('[bg]', '[v]')};{fb_a_filter}"
 
                 cmd_fallback += [
-                    "-threads", "0",
+                    "-threads", "2",
                     "-filter_complex", fb_complex,
                     "-map", "[v]",
                     "-map", "[a]",
@@ -701,8 +701,9 @@ def add_background_music_to_video(
         str(output_path)
     ]
 
+    bgm_timeout = max(300, int(dur * 2))
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=bgm_timeout)
         if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
             return True
         else:
@@ -734,7 +735,7 @@ def add_background_music_to_video(
         str(output_path)
     ]
     try:
-        res2 = subprocess.run(cmd_amix, capture_output=True, text=True, timeout=180)
+        res2 = subprocess.run(cmd_amix, capture_output=True, text=True, timeout=bgm_timeout)
         if res2.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
             return True
     except Exception as e_amix:
@@ -755,7 +756,7 @@ def add_background_music_to_video(
             "-movflags", "+faststart",
             str(output_path)
         ]
-        res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=240)
+        res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=max(450, int(dur * 3)))
         return res_fb.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
     except Exception as e2:
         print(f"BGM fallback exception: {e2}")
@@ -795,7 +796,33 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
     temp_dir = output_video_path.parent / f"temp_merge_{int(time.time()*1000)}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Strategy 1: Direct Binary MPEG-TS Concat (Lightning fast, zero quality loss, rock-solid on Windows)
+    # Strategy 1: Concat Demuxer with Stream Copy (Instant 1-second merge, zero quality loss, 0 MB disk bloat)
+    try:
+        concat_list = temp_dir / "concat_list.txt"
+        with open(concat_list, "w", encoding="utf-8") as f:
+            for p in valid_clips:
+                safe_p = str(p.resolve()).replace("\\", "/").replace("'", "'\\''")
+                f.write(f"file '{safe_p}'\n")
+
+        cmd = [
+            ffmpeg, "-y",
+            "-fflags", "+genpts",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_list),
+            "-c", "copy",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            str(output_video_path)
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return True
+    except Exception as e:
+        print(f"Direct concat stream copy failed, falling back to MPEG-TS: {e}")
+
+    # Strategy 2: Direct Binary MPEG-TS Concat (Resilient fallback)
     try:
         ts_files = []
         transmux_ok = True
@@ -866,32 +893,6 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
                 return True
     except Exception as e_ts:
         print(f"TS binary concat error: {e_ts}")
-
-    # Strategy 2: Concat Demuxer with Stream Copy
-    try:
-        concat_list = temp_dir / "concat_list.txt"
-        with open(concat_list, "w", encoding="utf-8") as f:
-            for p in valid_clips:
-                safe_p = str(p.resolve()).replace("\\", "/").replace("'", "'\\''")
-                f.write(f"file '{safe_p}'\n")
-
-        cmd = [
-            ffmpeg, "-y",
-            "-fflags", "+genpts",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_list),
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
-            "-movflags", "+faststart",
-            str(output_video_path)
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            return True
-    except Exception as e:
-        print(f"Direct concat stream copy failed: {e}")
 
     # Strategy 3: Concat Demuxer with Fast Re-encoding (Handles any codec/rate discrepancy)
     try:

@@ -123,7 +123,7 @@ def cleanup_storage_cache(max_age_hours: float = 0.5, max_folder_mb: float = 120
 
         now = time.time()
         max_age_sec = max_age_hours * 3600  # 30 mins = 1800s
-        protect_window_sec = 600  # Strictly protect currently rendering jobs in last 10 mins
+        protect_window_sec = 2400  # Strictly protect currently rendering jobs in last 40 mins (handles long 9+ min videos)
 
         items = []
         total_bytes = 0
@@ -1147,10 +1147,14 @@ def run_full_auto_video_pipeline(
 
     prep_results.sort(key=lambda x: x["index"])
     for pr in prep_results:
-        if pr.get("raw_path"):
-            numbered_assets_for_zip.append(pr["raw_path"])
+        # Collect voiceover narration audio, subtitle overlays, and AI visual cards
+        # DO NOT bundle 40MB+ raw unedited stock videos into the ZIP (processed clips are already in the ZIP)
         if pr.get("audio_path"):
             numbered_assets_for_zip.append(pr["audio_path"])
+        if pr.get("overlay_path"):
+            numbered_assets_for_zip.append(pr["overlay_path"])
+        if pr.get("raw_path") and (pr.get("is_img") or "fallback" in str(pr.get("raw_path")) or "card" in str(pr.get("raw_path"))):
+            numbered_assets_for_zip.append(pr["raw_path"])
 
     # 4. PHASE 2: VIDEO ENCODING
     status_container.info("🎬 [4/4] Multi-core video rendering & merging final video...")
@@ -1353,14 +1357,16 @@ with tab1:
                 st.audio(str(merged_path), format="audio/mp4")
                 st.caption("💡 Mobile Tip: Agar mobile pe voice nahi sunai de rahi to device ka Silent Mode/Mute switch OFF karein aur Media Volume badhayein.")
 
-            # Action Buttons Row
+            # Action Buttons Row (Memory-safe streaming: 0 MB loaded on page render)
             st.write("")
             dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 1.5])
-            video_bytes_data = merged_path.read_bytes()
             with dl_col1:
+                def _stream_final_video():
+                    return open(merged_path, "rb")
+
                 st.download_button(
                     label=f"⬇️ Download Video ({topic_slug}_Video.mp4)",
-                    data=video_bytes_data,
+                    data=_stream_final_video,
                     file_name=f"{topic_slug}_Video.mp4",
                     mime="video/mp4",
                     type="primary",
@@ -1371,9 +1377,12 @@ with tab1:
                 if st.session_state.get("assets_zip"):
                     zip_p = Path(st.session_state.assets_zip)
                     if zip_p.exists():
+                        def _stream_assets_zip():
+                            return open(zip_p, "rb")
+
                         st.download_button(
                             label="📦 Download Archive ZIP",
-                            data=zip_p.read_bytes(),
+                            data=_stream_assets_zip,
                             file_name=f"{topic_slug}_Assets.zip",
                             mime="application/zip",
                             key="btn_top_dl_zip",
@@ -1579,6 +1588,15 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         elif not pixabay_key:
             st.error("Please ensure the Pixabay API key is set in the sidebar.")
         else:
+            # Prevent mobile phone screen from sleeping during long video rendering
+            st.components.v1.html(
+                """<script>
+                if ('wakeLock' in navigator) {
+                    navigator.wakeLock.request('screen').catch(function(){});
+                }
+                </script>""",
+                height=0
+            )
             status_container = st.empty()
             render_bar = st.progress(0.0)
             pipeline_res = run_full_auto_video_pipeline(
@@ -1639,9 +1657,12 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
             """, unsafe_allow_html=True)
             col_bot_dl1, col_bot_dl2 = st.columns([1, 1])
             with col_bot_dl1:
+                def _stream_bot_video():
+                    return open(bot_video_path, "rb")
+
                 st.download_button(
                     label=f"⬇️ Download Video ({b_slug}_Video.mp4)",
-                    data=bot_video_path.read_bytes(),
+                    data=_stream_bot_video,
                     file_name=f"{b_slug}_Video.mp4",
                     mime="video/mp4",
                     type="primary",
@@ -1650,9 +1671,13 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 )
             with col_bot_dl2:
                 if st.session_state.get("assets_zip") and Path(st.session_state.assets_zip).exists():
+                    bot_zip_path = Path(st.session_state.assets_zip)
+                    def _stream_bot_zip():
+                        return open(bot_zip_path, "rb")
+
                     st.download_button(
                         label="📦 Download Assets ZIP",
-                        data=Path(st.session_state.assets_zip).read_bytes(),
+                        data=_stream_bot_zip,
                         file_name=f"{b_slug}_Assets.zip",
                         mime="application/zip",
                         key="btn_bottom_quick_dl_zip",
@@ -1892,6 +1917,14 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
 
                 st.write("")
                 if st.button("🚀 Render & Merge Video from Storyboard", type="primary", use_container_width=True, key="btn_adv_render"):
+                    st.components.v1.html(
+                        """<script>
+                        if ('wakeLock' in navigator) {
+                            navigator.wakeLock.request('screen').catch(function(){});
+                        }
+                        </script>""",
+                        height=0
+                    )
                     status_c = st.empty()
                     r_bar = st.progress(0.0)
                     pipeline_res = run_full_auto_video_pipeline(
