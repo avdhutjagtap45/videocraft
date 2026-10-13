@@ -285,48 +285,104 @@ st.markdown("""
         border: 1px solid #DBEAFE;
     }
 
-    /* Buttons */
+    /* Modern VideoCraft Studio Buttons */
     div.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563EB 0%, #4F46E5 100%) !important;
+        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%) !important;
         color: #FFFFFF !important;
         border: none !important;
-        border-radius: 8px !important;
+        border-radius: 12px !important;
         font-weight: 700 !important;
-        font-size: 0.92rem !important;
+        font-size: 1.02rem !important;
         letter-spacing: 0.01em !important;
-        padding: 0.55rem 1.25rem !important;
-        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22) !important;
-        transition: all 0.15s ease !important;
+        padding: 0.72rem 1.8rem !important;
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35) !important;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
     }
     div.stButton > button[kind="primary"]:hover {
-        opacity: 0.95 !important;
-        transform: translateY(-1px) !important;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+        opacity: 0.96 !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45) !important;
     }
     div.stButton > button[kind="secondary"] {
         background: #FFFFFF !important;
-        color: #1E293B !important;
+        color: #334155 !important;
         border: 1px solid #CBD5E1 !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        padding: 0.55rem 1.1rem !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+        padding: 0.72rem 1.4rem !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
         transition: all 0.15s ease !important;
     }
     div.stButton > button[kind="secondary"]:hover {
         background: #F8FAFC !important;
         border-color: #94A3B8 !important;
-    }
-
-    /* Form Inputs & Textarea */
-    div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] {
-        background-color: #FFFFFF !important;
-        border-radius: 8px !important;
-        border: 1px solid #CBD5E1 !important;
         color: #0F172A !important;
     }
+
+    /* Studio Form Inputs & Textarea */
+    div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+        border-radius: 10px !important;
+        border: 1px solid #E2E8F0 !important;
+        color: #0F172A !important;
+        font-size: 0.92rem !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+        transition: all 0.15s ease !important;
+    }
     div[data-baseweb="input"]:focus-within, div[data-baseweb="textarea"]:focus-within {
-        border-color: #2563EB !important;
-        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12) !important;
+        border-color: #6366F1 !important;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12) !important;
+    }
+
+    /* Studio Main Card Surrounding Script Form */
+    div[class*="st-key-main_studio_card"], .videocraft-studio-card {
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 16px !important;
+        padding: 24px 26px !important;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04) !important;
+        margin-top: 10px !important;
+        margin-bottom: 24px !important;
+    }
+
+    /* Popover text links */
+    div[data-testid="stPopover"] > button {
+        background: transparent !important;
+        border: none !important;
+        color: #4F46E5 !important;
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        padding: 2px 6px !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stPopover"] > button:hover {
+        background: #EEF2FF !important;
+        color: #4338CA !important;
+        border-radius: 6px !important;
+    }
+
+    /* Feature Pills */
+    .feat-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #475569;
+    }
+    .feat-tag-hd {
+        background: #4F46E5;
+        color: #FFFFFF;
+        font-size: 0.62rem;
+        font-weight: 800;
+        padding: 1px 5px;
+        border-radius: 4px;
+        letter-spacing: 0.04em;
     }
 
     /* Minimalist Expanders */
@@ -343,30 +399,33 @@ st.markdown("""
         color: #1E293B !important;
     }
 
-    /* Streamlit Tabs */
+    /* Streamlit Underline Tabs */
     .stTabs [data-baseweb="tab-list"] {
         background: transparent !important;
-        border-bottom: 1px solid #E2E8F0 !important;
+        border-bottom: 1.5px solid #E2E8F0 !important;
         padding: 0 !important;
-        gap: 16px !important;
+        gap: 24px !important;
+        margin-bottom: 14px !important;
     }
     .stTabs [data-baseweb="tab"] {
         background: transparent !important;
         border: none !important;
-        border-bottom: 2px solid transparent !important;
-        padding: 8px 4px !important;
+        border-bottom: 2.5px solid transparent !important;
+        padding: 10px 4px !important;
         font-weight: 600 !important;
-        font-size: 0.88rem !important;
+        font-size: 0.95rem !important;
         color: #64748B !important;
+        transition: all 0.15s ease !important;
     }
     .stTabs [aria-selected="true"] {
-        color: #2563EB !important;
-        border-bottom: 2px solid #2563EB !important;
+        color: #4F46E5 !important;
+        border-bottom: 2.5px solid #4F46E5 !important;
+        font-weight: 700 !important;
     }
 
     /* Progress Bar */
     div[data-testid="stProgress"] > div > div > div > div {
-        background: linear-gradient(90deg, #2563EB, #10B981) !important;
+        background: linear-gradient(90deg, #4F46E5, #10B981) !important;
         border-radius: 6px !important;
     }
 
@@ -655,35 +714,39 @@ if not st.session_state.studio_authenticated:
 # --- MINIMALIST SIDEBAR ---
 with st.sidebar:
     st.markdown("""
-    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.3rem;">🎬</span>
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="background: #1E1B4B; color: #FFFFFF; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; box-shadow: 0 2px 6px rgba(30,27,75,0.18);">🎬</div>
             <div>
-                <div style="font-size: 0.95rem; font-weight: 800; color: #0F172A; line-height: 1.2;">VideoCraft</div>
-                <div style="font-size: 0.68rem; color: #64748B; font-weight: 600;">STUDIO PRO</div>
+                <div style="font-size: 1.02rem; font-weight: 800; color: #0F172A; line-height: 1.2; letter-spacing: -0.02em;">VideoCraft</div>
+                <div style="font-size: 0.65rem; color: #6366F1; font-weight: 700; letter-spacing: 0.05em;">STUDIO PRO</div>
             </div>
         </div>
         <span style="font-size: 0.68rem; color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 2px 8px; border-radius: 999px; font-weight: 700;">● Active</span>
     </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #EEF2FF; color: #4F46E5; font-size: 0.88rem; font-weight: 700; border-radius: 8px;">
+            <span style="font-size: 0.95rem;">⚙️</span> Project Settings
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
+            <span style="font-size: 0.95rem;">✨</span> AI Tools
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
+            <span style="font-size: 0.95rem;">📁</span> My Creations
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
+            <span style="font-size: 0.95rem;">📄</span> Templates
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
+            <span style="font-size: 0.95rem;">🕒</span> History
+        </div>
+    </div>
+    <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; margin: 12px 0 8px 0;">OUTPUT SETTINGS</div>
     """, unsafe_allow_html=True)
-
-    col_sb1, col_sb2 = st.columns(2)
-    with col_sb1:
-        if st.button("🔒 Lock", help="Lock studio session", use_container_width=True, key="btn_sidebar_lock"):
-            st.session_state.studio_authenticated = False
-            st.rerun()
-    with col_sb2:
-        if st.button("🔄 Reset", help="Clear all studio state", use_container_width=True, key="btn_sidebar_reset"):
-            for k in list(st.session_state.keys()):
-                if k != "studio_authenticated":
-                    st.session_state.pop(k, None)
-            st.rerun()
-
-    st.write("")
 
     # Core Video Aspect Ratio
     format_choice = st.selectbox(
-        "📐 Aspect Ratio",
+        "🖥️ Video Format",
         options=[
             "16:9 Landscape (YouTube)",
             "9:16 Portrait (Shorts/Reels)",
@@ -803,27 +866,31 @@ with st.sidebar:
             type="password"
         )
 
-# --- MINIMALIST CLEAN HEADER ---
-st.markdown("""
-<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0 16px 0; border-bottom: 1px solid #E2E8F0; margin-bottom: 20px;">
-    <div style="display: flex; align-items: center; gap: 10px;">
-        <span style="font-size: 1.5rem;">🎬</span>
-        <div>
-            <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; letter-spacing: -0.02em; line-height: 1.2;">
-                VideoCraft Studio
-            </div>
-            <div style="font-size: 0.76rem; color: #64748B;">
-                AI Script-to-Video Engine
+    st.markdown("""
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; margin-top: 14px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.15rem;">👑</span>
+            <div>
+                <div style="font-size: 0.84rem; font-weight: 800; color: #92400E;">Studio Pro</div>
+                <div style="font-size: 0.68rem; color: #B45309; font-weight: 600;">All features unlocked</div>
             </div>
         </div>
+        <span style="color: #92400E; font-size: 0.9rem; font-weight: 700;">›</span>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 0.72rem; font-weight: 700; color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 3px 10px; border-radius: 999px;">
-            ● Ready
-        </span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
+    col_sb1, col_sb2 = st.columns(2)
+    with col_sb1:
+        if st.button("🔒 Lock", help="Lock studio session", use_container_width=True, key="btn_sidebar_lock"):
+            st.session_state.studio_authenticated = False
+            st.rerun()
+    with col_sb2:
+        if st.button("🔄 Reset", help="Clear all studio state", use_container_width=True, key="btn_sidebar_reset"):
+            for k in list(st.session_state.keys()):
+                if k != "studio_authenticated":
+                    st.session_state.pop(k, None)
+            st.rerun()
+
 
 # Voice Model Selection Modal Dialog
 if hasattr(st, "dialog"):
@@ -1303,8 +1370,53 @@ def run_full_auto_video_pipeline(
         "selected_assets": selected_assets_dict
     }
 
+# --- TOP SEARCH & STUDIO HEADER ---
+st.markdown("""
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 4px 0;">
+    <div style="display: flex; align-items: center; gap: 8px; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 999px; padding: 7px 18px; width: 100%; max-width: 440px; color: #64748B; font-size: 0.88rem; font-weight: 500;">
+        <span style="font-size: 0.95rem;">🔍</span>
+        <span>Search your projects...</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px;">
+        <div style="position: relative; font-size: 1.15rem; color: #64748B; cursor: pointer;">
+            🔔
+            <span style="position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; background: #EF4444; border-radius: 50%; display: inline-block;"></span>
+        </div>
+        <div style="font-size: 1.15rem; color: #64748B; cursor: pointer;">
+            ❓
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 4px 8px; border-radius: 999px; cursor: pointer;">
+            <div style="width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #6366F1, #8B5CF6); color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800;">VC</div>
+            <span style="font-size: 0.75rem; color: #64748B;">▾</span>
+        </div>
+    </div>
+</div>
+
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; padding-bottom: 4px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="background: #1E1B4B; color: #FFFFFF; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.45rem; box-shadow: 0 4px 12px rgba(30, 27, 75, 0.2);">🎬</div>
+        <div>
+            <div style="font-size: 1.85rem; font-weight: 800; color: #0F172A; letter-spacing: -0.03em; line-height: 1.15;">
+                VideoCraft <span style="color: #4F46E5;">Studio</span>
+            </div>
+            <div style="font-size: 0.88rem; color: #64748B; font-weight: 600; margin-top: 2px;">
+                AI Script-to-Video Engine
+            </div>
+        </div>
+    </div>
+    <div style="text-align: right;">
+        <span style="font-size: 0.75rem; font-weight: 700; background: #ECFDF5; color: #059669; padding: 3px 10px; border-radius: 999px; border: 1px solid #A7F3D0; display: inline-flex; align-items: center; gap: 4px;">
+            <span style="display: inline-block; width: 6px; height: 6px; background: #10B981; border-radius: 50%;"></span> Ready
+        </span>
+        <div style="font-size: 0.76rem; color: #94A3B8; font-weight: 500; margin-top: 3px;">
+            Generate amazing videos with AI
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 # Main Studio Tabs
-tab1, tab2 = st.tabs(["🎬 Script to Video", "📊 CSV Batch"])
+tab1, tab2 = st.tabs(["▶️ Script to Video", "📊 CSV Batch"])
 
 with tab1:
     # Mobile Connection Auto-Recovery: Restore most recently generated video if session reset
@@ -1455,110 +1567,177 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
             st.markdown("<hr style='margin: 22px 0 18px 0; border: none; border-top: 1px solid #E2E8F0;'/>", unsafe_allow_html=True)
 
     # =====================================================================
-    # 📝 MINIMALIST SCRIPT COMPOSER & CONTROLS
+    # 📝 VIDEOCRAFT STUDIO SCRIPT COMPOSER CARD
     # =====================================================================
     active_niche_k = st.session_state.get("selected_niche", "history")
     niche_keys = list(NICHE_CATALOG.keys())
     active_niche_data = NICHE_CATALOG.get(active_niche_k, NICHE_CATALOG["history"])
     niche_presets_dict = active_niche_data.get("presets", {})
-    all_preset_options = ["(Custom Script)", *list(niche_presets_dict.keys()), *list(SAMPLE_PRESETS.keys())]
+    all_preset_options = ["Custom Script", *list(niche_presets_dict.keys()), *list(SAMPLE_PRESETS.keys())]
 
-    # Compact Top Row: Topic Anchor & Story Presets
-    col_top1, col_top2 = st.columns([3, 2])
-    with col_top1:
-        main_topic_input = st.text_input(
-            "Video Topic",
-            value=st.session_state.get("custom_main_topic", ""),
-            placeholder="Topic (e.g. Lost Secrets of Egypt, Wealth Psychology...)",
-            label_visibility="collapsed"
-        )
-        st.session_state.custom_main_topic = main_topic_input
-    with col_top2:
-        preset_choice = st.selectbox(
-            "Load Story Preset",
-            all_preset_options,
-            label_visibility="collapsed"
-        )
+    # Main Studio Form Card
+    with st.container(border=True, key="main_studio_card"):
+        # Row 1: Video topic & Script type
+        col_top1, col_top2 = st.columns([1, 1])
+        with col_top1:
+            main_topic_input = st.text_input(
+                "📄 Video topic",
+                value=st.session_state.get("custom_main_topic", ""),
+                placeholder="e.g. The Zodiac Killer: The Unsolved Mystery"
+            )
+            st.session_state.custom_main_topic = main_topic_input
+        with col_top2:
+            preset_choice = st.selectbox(
+                "📑 Script type",
+                all_preset_options
+            )
 
-    if preset_choice != "(Custom Script)":
-        if preset_choice in niche_presets_dict:
-            initial_script = niche_presets_dict[preset_choice]
+        if preset_choice != "Custom Script":
+            if preset_choice in niche_presets_dict:
+                initial_script = niche_presets_dict[preset_choice]
+            else:
+                initial_script = SAMPLE_PRESETS.get(preset_choice, "")
         else:
-            initial_script = SAMPLE_PRESETS.get(preset_choice, "")
-    else:
-        initial_script = st.session_state.get("active_script_content", "")
+            initial_script = st.session_state.get("active_script_content", "")
 
-    # Live calculate script stats
-    curr_script_preview = initial_script or ""
-    line_count = len([line.strip() for line in curr_script_preview.split('\n') if line.strip()])
-    word_count = len(curr_script_preview.split())
-    est_dur = round(word_count / 2.3, 1) if word_count > 0 else 0.0
+        # Row 2: Your script (One line = one scene)
+        col_tip_l, col_tip_r = st.columns([4, 1])
+        with col_tip_l:
+            st.markdown("""
+            <div style="margin-top: 8px; margin-bottom: 2px;">
+                <span style="font-size: 0.9rem; font-weight: 700; color: #0F172A;">✏️ Your script <span style="font-size: 0.8rem; font-weight: 500; color: #64748B;">(One line = one scene)</span></span>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_tip_r:
+            with st.popover("💡 Tips"):
+                st.markdown("""
+                **Scriptwriting Tips:**
+                - **1 Line = 1 Scene** (~3–5 seconds of video each).
+                - Write engaging sentences describing clear visual action.
+                - Avoid punctuation clutter or emojis for smoothest voice synthesis.
+                """)
 
-    st.markdown(f"""
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; margin-bottom: 4px;">
-        <span style="font-size: 0.78rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Script (1 Line = 1 Scene)</span>
-        <span style="font-size: 0.76rem; font-weight: 600; color: #64748B;">{f'{line_count} Scenes · ~{est_dur}s Runtime' if line_count > 0 else ''}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Minimalist clean script text area
-    script_input = st.text_area(
-        "Script Content",
-        value=initial_script,
-        height=170,
-        placeholder="Type or paste your script line by line...\nEach line automatically gets matched 1080p footage, photo motion, and synced human voice narration.",
-        label_visibility="collapsed"
-    )
-
-    # Clean 1-Row Controls Bar: Voice, Channel Style, Footage Mix
-    col_c1, col_c2, col_c3 = st.columns(3)
-    with col_c1:
-        voice_keys = list(VOICE_CATALOG.keys())
-        curr_v = st.session_state.get("selected_voice", DEFAULT_VOICE)
-        idx_v = voice_keys.index(curr_v) if curr_v in voice_keys else 0
-        selected_voice = st.selectbox(
-            "🎙️ Voice Narrator",
-            options=voice_keys,
-            format_func=lambda k: VOICE_CATALOG.get(k, k).split('(')[0].strip(),
-            index=idx_v
-        )
-        st.session_state.selected_voice = selected_voice
-
-    with col_c2:
-        cur_niche_idx = niche_keys.index(active_niche_k) if active_niche_k in niche_keys else 0
-        selected_niche_name = st.selectbox(
-            "🎛️ Channel Style",
-            options=[NICHE_CATALOG[k]["name"] for k in niche_keys],
-            index=cur_niche_idx
-        )
-        for k, v in NICHE_CATALOG.items():
-            if v["name"] == selected_niche_name:
-                active_niche_k = k
-                break
-        if st.session_state.get("selected_niche") != active_niche_k:
-            st.session_state.selected_niche = active_niche_k
-            st.rerun()
-
-    with col_c3:
-        global_media_pref = st.selectbox(
-            "🎥 Footage Mix",
-            ["invideo_mix", "both", "video", "image"],
-            format_func=lambda x: {
-                "invideo_mix": "🎯 Smart 60% Video / 40% Photo",
-                "both": "🎬 Best Available",
-                "video": "🎥 Videos Only",
-                "image": "📸 Photos Only"
-            }.get(x, x)
+        script_input = st.text_area(
+            "Your Script",
+            value=initial_script,
+            height=180,
+            placeholder="Type or paste your script line by line...\nEach line automatically gets matched with 1080p footage, photo motion, and synced human voice narration.",
+            label_visibility="collapsed"
         )
 
-    # Primary 1-Click Action Button
-    st.write("")
-    trigger_1click = st.button(
-        "🚀 Generate Video (1-Click)",
-        type="primary",
-        use_container_width=True,
-        help="Automatically finds best 1080p clips, adds voiceover & music, and builds complete video."
-    )
+        curr_script_preview = script_input or ""
+        line_count = len([line.strip() for line in curr_script_preview.split('\n') if line.strip()])
+        char_count = len(curr_script_preview)
+
+        col_inf_l, col_inf_r = st.columns([3, 1.5])
+        with col_inf_l:
+            st.markdown(f"""
+            <div style="margin-top: 4px; margin-bottom: 10px;">
+                <span style="font-size: 0.78rem; font-weight: 600; color: #64748B;">{line_count} lines • {char_count} characters</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_inf_r:
+            with st.popover("📄 Example scripts"):
+                st.markdown("**Load Sample Niche Script:**")
+                for ex_name, ex_script in list(SAMPLE_PRESETS.items())[:3]:
+                    if st.button(f"Load: {ex_name}", key=f"btn_load_ex_{slugify(ex_name)}", use_container_width=True):
+                        st.session_state.active_script_content = ex_script
+                        st.rerun()
+
+        # Row 3: Voice narrator, Channel style, Footage mix
+        col_c1, col_c2, col_c3 = st.columns(3)
+        with col_c1:
+            voice_keys = list(VOICE_CATALOG.keys())
+            curr_v = st.session_state.get("selected_voice", DEFAULT_VOICE)
+            idx_v = voice_keys.index(curr_v) if curr_v in voice_keys else 0
+            col_v_dd, col_v_btn = st.columns([4, 1])
+            with col_v_dd:
+                selected_voice = st.selectbox(
+                    "🎙️ Voice narrator",
+                    options=voice_keys,
+                    format_func=lambda k: {
+                        "hi-IN-MadhurNeural": "IN Madhur (Natural)",
+                        "hi-IN-SwaraNeural": "IN Swara (Female)",
+                        "en-US-ChristopherNeural": "US Christopher (Narrator)",
+                        "en-US-JennyNeural": "US Jenny (Clear Female)",
+                        "en-US-GuyNeural": "US Guy (Modern Vlogger)",
+                        "en-US-AriaNeural": "US Aria (Studio Female)",
+                        "en-GB-RyanNeural": "GB Ryan (British Male)"
+                    }.get(k, VOICE_CATALOG.get(k, k).split('(')[0].strip()),
+                    index=idx_v
+                )
+                st.session_state.selected_voice = selected_voice
+            with col_v_btn:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                if st.button("▶️", help="Preview sample voice", key="btn_quick_voice_play"):
+                    sample_file = DOWNLOADS_DIR / f"sample_{selected_voice}.mp3"
+                    if not sample_file.exists():
+                        generate_human_voiceover("Welcome to VideoCraft Studio. Voice narration is ready.", sample_file, voice=selected_voice)
+                    if sample_file.exists():
+                        st.audio(str(sample_file), format="audio/mp3", autoplay=True)
+
+        with col_c2:
+            cur_niche_idx = niche_keys.index(active_niche_k) if active_niche_k in niche_keys else 0
+            selected_niche_name = st.selectbox(
+                "🏛️ Channel style",
+                options=[NICHE_CATALOG[k]["name"] for k in niche_keys],
+                index=cur_niche_idx
+            )
+            for k, v in NICHE_CATALOG.items():
+                if v["name"] == selected_niche_name:
+                    active_niche_k = k
+                    break
+            if st.session_state.get("selected_niche") != active_niche_k:
+                st.session_state.selected_niche = active_niche_k
+                st.rerun()
+
+        with col_c3:
+            global_media_pref = st.selectbox(
+                "🎞️ Footage mix",
+                ["invideo_mix", "both", "video", "image"],
+                format_func=lambda x: {
+                    "invideo_mix": "🎯 Smart 60% Video / 40% Photo",
+                    "both": "🎬 Best Available 1080p",
+                    "video": "🎥 100% Videos Only",
+                    "image": "📸 100% Photos Only"
+                }.get(x, x)
+            )
+
+        # Row 4: Feature Badges
+        st.markdown("""
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 20px 0;">
+            <div class="feat-pill"><span class="feat-tag-hd">HD</span> 1080p output</div>
+            <div class="feat-pill"><span>🖼️</span> Auto scene matching</div>
+            <div class="feat-pill"><span>〰️</span> Voice sync</div>
+            <div class="feat-pill"><span>🛡️</span> Royalty-free media</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Row 5: Action Buttons
+        col_act1, col_act2 = st.columns([3.5, 1.5])
+        with col_act1:
+            trigger_1click = st.button(
+                "🪄 Generate video ➔",
+                type="primary",
+                use_container_width=True,
+                help="Automatically finds best 1080p clips, adds voiceover & music, and builds complete video."
+            )
+        with col_act2:
+            btn_save_draft = st.button(
+                "🔖 Save draft",
+                type="secondary",
+                use_container_width=True
+            )
+            if btn_save_draft:
+                st.session_state.active_script_content = script_input
+                st.session_state.custom_main_topic = main_topic_input
+                st.toast("✅ Draft saved successfully!", icon="🔖")
+
+        st.markdown("""
+        <div style="text-align: center; font-size: 0.78rem; font-weight: 600; color: #94A3B8; margin-top: 10px;">
+            Turn your ideas into stunning videos with the power of AI
+        </div>
+        """, unsafe_allow_html=True)
 
     # Optional AI Script Generator (Tucked away in subtle expander)
     with st.expander("✨ Need an AI Script? Generate Topic & Script Here", expanded=False):
