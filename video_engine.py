@@ -144,6 +144,60 @@ def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: Image
         lines.append(" ".join(curr_line))
     return lines
 
+def _is_script_trigger_word(word: str, line_words: Optional[List[str]] = None, word_idx: int = -1) -> bool:
+    """
+    Dynamically identifies high-impact trigger words directly from the script context:
+    1. Numbers, metrics, and scale quantities (e.g. '7000', '7000-year', '99%', '$10M', '24h', '10x', '2-million')
+    2. Units, timeframes, and scale measures (e.g. 'years', 'saal', 'centuries', 'hours', 'million', 'billion', 'tons')
+    3. Emotionally emphasized words written in ALL-CAPS in the creator's script (e.g. 'SECRET', 'IMPOSSIBLE', 'DANGER')
+    4. Quoted or emphasized terms (e.g. '"Forbidden"', 'Warning!')
+    5. Core curiosity & suspense words in English and Hindi
+    """
+    raw = word.strip()
+    clean = re.sub(r'[^\w%$-]', '', raw.lower())
+    if not clean:
+        return False
+
+    # 1. Any word containing digits (7000, 2M, 99%, 10x, 24/7, 500BC, etc.)
+    if re.search(r'\d', clean):
+        return True
+
+    # 2. Time spans, quantities, and scale metrics from the script
+    quantity_units = {
+        'years', 'year', 'saal', 'centuries', 'century', 'hours', 'hour', 'ghante',
+        'days', 'din', 'weeks', 'months', 'million', 'billion', 'trillion', 'tons',
+        'ton', 'kilos', 'percent', 'zero', 'millions', 'billions', 'crore', 'lakh'
+    }
+    if clean in quantity_units:
+        if line_words and word_idx > 0:
+            prev_clean = re.sub(r'[^\w%$-]', '', line_words[word_idx - 1].lower())
+            if re.search(r'\d', prev_clean):
+                return True
+        return True
+
+    # 3. All-Caps Emphasis directly from the creator's script (length >= 3)
+    clean_alpha = re.sub(r'[^a-zA-Z]', '', raw)
+    if clean_alpha.isupper() and len(clean_alpha) >= 3:
+        return True
+
+    # 4. Quoted or exclamation words in script
+    if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")) or raw.endswith('!') or raw.endswith('!?'):
+        if len(clean) >= 3:
+            return True
+
+    # 5. Core curiosity power keywords (English & Hindi)
+    power_keywords = {
+        'secret', 'secrets', 'mystery', 'mysterious', 'truth', 'impossible',
+        'shocking', 'terrifying', 'danger', 'dangerous', 'forbidden', 'hidden',
+        'ancient', 'alien', 'aliens', 'lie', 'lies', 'proof', 'warning',
+        'strange', 'weird', 'unexplained', 'never', 'banned', 'lost',
+        'rahasya', 'khatarnak', 'sach', 'jhooth', 'chamatkar', 'asambhav', 'anokha'
+    }
+    if clean in power_keywords:
+        return True
+
+    return False
+
 def create_overlay_image(
     width: int,
     height: int,
@@ -272,32 +326,54 @@ def create_overlay_image(
                         width=max(1, int(1.5 * scale_factor))
                     )
 
-                # Render text lines with crisp outline stroke & viral color accents
+                # Render text lines with crisp outline stroke & viral word-level trigger highlighting
+                space_box = draw.textbbox((0, 0), " ", font=sub_font)
+                space_w = space_box[2] - space_box[0]
+
                 for i, line in enumerate(lines):
                     ly = sub_y + pad_sub_y + i * line_height
-                    lb = draw.textbbox((0, 0), line, font=sub_font)
-                    lx = sub_x + (box_sub_w - (lb[2] - lb[0])) // 2
+                    line_words = line.split()
+                    if not line_words:
+                        continue
 
-                    if is_creator_viral:
-                        # High-energy Viral Creator style:
-                        # Radiant Yellow accent for hooks, questions, shock words, and opening lines
-                        line_lower = line.lower()
-                        trigger_words = {"nasa", "secret", "truth", "shocking", "terrifying", "impossible", "hidden", "alien", "mystery", "why", "what", "never", "human", "earth", "dark"}
-                        has_trigger = any(tw in line_lower for tw in trigger_words) or ("?" in line) or ("!" in line)
-                        text_color = (254, 240, 138, 255) if (i == 0 or has_trigger) else (255, 255, 255, 255)
-                        stroke_w = max(2, int(3.5 * scale_factor))
-                        draw.text(
-                            (lx, ly),
-                            line,
-                            font=sub_font,
-                            fill=text_color,
-                            stroke_width=stroke_w,
-                            stroke_fill=(0, 0, 0, 255)
-                        )
-                    else:
-                        # Soft shadow + clean white
-                        draw.text((lx + 2, ly + 2), line, font=sub_font, fill=(0, 0, 0, 200))
-                        draw.text((lx, ly), line, font=sub_font, fill=(255, 255, 255, 255))
+                    # Accurate word measurements
+                    word_boxes = [draw.textbbox((0, 0), w, font=sub_font) for w in line_words]
+                    word_widths = [b[2] - b[0] for b in word_boxes]
+                    total_line_w = sum(word_widths) + space_w * max(0, len(line_words) - 1)
+                    cur_x = sub_x + (box_sub_w - total_line_w) // 2
+
+                    stroke_w = max(2, int(3.5 * scale_factor))
+
+                    for w_idx, (word, w_w) in enumerate(zip(line_words, word_widths)):
+                        is_trigger = is_creator_viral and _is_script_trigger_word(word, line_words, w_idx)
+
+                        if is_trigger:
+                            # Dynamic Script Trigger Highlight: Radiant Golden Yellow (Viral retention pop)
+                            draw.text(
+                                (cur_x, ly),
+                                word,
+                                font=sub_font,
+                                fill=(254, 224, 60, 255),
+                                stroke_width=stroke_w,
+                                stroke_fill=(0, 0, 0, 255)
+                            )
+                        else:
+                            if is_creator_viral:
+                                # Clean Studio White with bold dark stroke
+                                draw.text(
+                                    (cur_x, ly),
+                                    word,
+                                    font=sub_font,
+                                    fill=(255, 255, 255, 255),
+                                    stroke_width=stroke_w,
+                                    stroke_fill=(0, 0, 0, 255)
+                                )
+                            else:
+                                # Soft shadow + clean white
+                                draw.text((cur_x + 2, ly + 2), word, font=sub_font, fill=(0, 0, 0, 200))
+                                draw.text((cur_x, ly), word, font=sub_font, fill=(255, 255, 255, 255))
+
+                        cur_x += w_w + space_w
 
         output_png.parent.mkdir(parents=True, exist_ok=True)
         img.save(output_png, "PNG")
