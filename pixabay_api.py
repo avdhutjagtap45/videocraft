@@ -283,6 +283,13 @@ def search_assets(
         if ai_asset:
             _add_results([ai_asset], "OpenAI DALL-E Generation")
 
+    # Pass results through StudioBrain for self-learning ranking and blacklisting
+    try:
+        from studio_brain import StudioBrain
+        results = StudioBrain.rank_and_filter_candidates(results, keyword=query)
+    except Exception as e:
+        print(f"StudioBrain ranking fallback: {e}")
+
     return results
 
 def pick_unique_candidate(candidates: List[Dict[str, Any]], used_ids: Set[str]) -> Tuple[int, Optional[Dict[str, Any]]]:

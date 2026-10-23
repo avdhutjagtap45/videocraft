@@ -1,3 +1,4 @@
+import subprocess
 import io
 import csv
 import re
@@ -7,6 +8,8 @@ from pathlib import Path
 import requests
 import streamlit as st
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from job_manager import BackgroundRenderManager
+from studio_brain import StudioBrain
 
 from script_parser import parse_script_to_scenes, SAMPLE_PRESETS
 try:
@@ -114,20 +117,45 @@ APP_DIR = Path(__file__).parent
 DOWNLOADS_DIR = APP_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-def cleanup_storage_cache(max_age_hours: float = 0.5, max_folder_mb: float = 1200.0):
+def cleanup_storage_cache(max_age_hours: float = 48.0, max_folder_mb: float = 35000.0):
     """
-    Automatic Storage Manager (Optimized for Streamlit Cloud & Ephemeral Disk):
-    1. Removes temporary job folders, raw assets, and videos older than 30 minutes (0.5 hrs).
-    2. Allows user 30 minutes to download their video, then cleans the server to keep disk space 100% free.
-    3. Guarantees active rendering jobs (< 10 minutes) are strictly protected.
+    Automatic Storage Manager (Optimized for Local Creator Desktop & Long 20-60+ min Videos):
+    1. Keeps rendered videos safe for at least 48 hours.
+    2. Protects active rendering jobs for at least 6 hours (21600s), fully supporting 20-60+ min videos.
+    3. NEVER deletes the currently loaded session video, recent merged_video_*.mp4 files, or assets_*.zip.
+    4. Only cleans up intermediate job folders when disk space limit (35 GB) is reached.
     """
     try:
         if not DOWNLOADS_DIR.exists():
             return
 
         now = time.time()
-        max_age_sec = max_age_hours * 3600  # 30 mins = 1800s
-        protect_window_sec = 2400  # Strictly protect currently rendering jobs in last 40 mins (handles long 9+ min videos)
+        max_age_sec = max_age_hours * 3600  # 48 hours
+        protect_window_sec = 21600  # 6 hours protection window for long 20-60+ min videos
+
+        # Gather explicitly protected paths (session files and recent final videos)
+        protected_names = set()
+        try:
+            if hasattr(st, "session_state"):
+                if st.session_state.get("merged_video"):
+                    protected_names.add(Path(st.session_state.merged_video).name)
+                if st.session_state.get("assets_zip"):
+                    protected_names.add(Path(st.session_state.assets_zip).name)
+                if st.session_state.get("csv_merged"):
+                    protected_names.add(Path(st.session_state.csv_merged).name)
+                if st.session_state.get("csv_zip"):
+                    protected_names.add(Path(st.session_state.csv_zip).name)
+        except Exception:
+            pass
+
+        # Protect 5 most recent merged_video_*.mp4 files unconditionally
+        recent_finals = sorted(DOWNLOADS_DIR.glob("merged_video_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for rf in recent_finals[:5]:
+            protected_names.add(rf.name)
+
+        recent_zips = sorted(DOWNLOADS_DIR.glob("assets_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for rz in recent_zips[:5]:
+            protected_names.add(rz.name)
 
         items = []
         total_bytes = 0
@@ -144,11 +172,20 @@ def cleanup_storage_cache(max_age_hours: float = 0.5, max_folder_mb: float = 120
             except Exception:
                 continue
 
-        # Rule 1: Delete all items older than 30 minutes (not in active 10-min render window)
+        # Rule 1: Delete temporary job folders older than max_age_hours (48h) and outside protection window (6h)
         remaining_items = []
         for item, mtime, sz in items:
+            if item.name in protected_names:
+                remaining_items.append((item, mtime, sz))
+                continue
+
             age = now - mtime
+            # Only delete intermediate job folders or non-final files older than 48 hours
             if age > max_age_sec and age > protect_window_sec:
+                # Never delete final output files in Rule 1
+                if item.name.startswith("merged_video_"):
+                    remaining_items.append((item, mtime, sz))
+                    continue
                 try:
                     if item.is_dir():
                         shutil.rmtree(item, ignore_errors=True)
@@ -160,14 +197,17 @@ def cleanup_storage_cache(max_age_hours: float = 0.5, max_folder_mb: float = 120
             else:
                 remaining_items.append((item, mtime, sz))
 
-        # Rule 2: If total folder size exceeds max_folder_mb (1200MB), purge oldest completed items
+        # Rule 2: If total folder size exceeds max_folder_mb (35GB), purge ONLY oldest temporary scene folders
         max_bytes = max_folder_mb * 1024 * 1024
         if total_bytes > max_bytes:
             remaining_items.sort(key=lambda x: x[1])
             for item, mtime, sz in remaining_items:
-                if (now - mtime) < protect_window_sec:
-                    continue  # NEVER delete active render
-                if total_bytes <= (max_bytes * 0.5):
+                if item.name in protected_names or (now - mtime) < protect_window_sec:
+                    continue  # NEVER delete protected files or active renders
+                # NEVER purge final merged videos in Rule 2
+                if item.name.startswith("merged_video_"):
+                    continue
+                if total_bytes <= (max_bytes * 0.7):
                     break
                 try:
                     if item.is_dir():
@@ -672,7 +712,7 @@ def render_pipeline_stepper(current_stage: int):
 # -------------------------------------------------------------
 # 🔒 STUDIO SECURITY & PIN ACCESS CONTROL
 # -------------------------------------------------------------
-STUDIO_ACCESS_PIN = os.environ.get("STUDIO_PIN", "0808")
+STUDIO_ACCESS_PIN = os.environ.get("STUDIO_PIN", "Harshad")
 
 if "studio_authenticated" not in st.session_state:
     st.session_state.studio_authenticated = False
@@ -715,10 +755,22 @@ if not st.session_state.studio_authenticated:
     render_pin_lock_screen()
     st.stop()
 
+# Video Ratio / Orientation Global Initialization
+cur_ratio = st.session_state.get("select_video_ratio", "16:9 Landscape (YouTube)")
+if "9:16" in cur_ratio:
+    target_w, target_h = 1080, 1920
+    orientation = "vertical"
+elif "1:1" in cur_ratio:
+    target_w, target_h = 1080, 1080
+    orientation = "all"
+else:
+    target_w, target_h = 1920, 1080
+    orientation = "horizontal"
+
 # --- MINIMALIST SIDEBAR ---
 with st.sidebar:
     st.markdown("""
-    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
         <div style="display: flex; align-items: center; gap: 10px;">
             <div style="background: #1E1B4B; color: #FFFFFF; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; box-shadow: 0 2px 6px rgba(30,27,75,0.18);">🎬</div>
             <div>
@@ -728,45 +780,8 @@ with st.sidebar:
         </div>
         <span style="font-size: 0.68rem; color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 2px 8px; border-radius: 999px; font-weight: 700;">● Active</span>
     </div>
-    <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px;">
-        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #EEF2FF; color: #4F46E5; font-size: 0.88rem; font-weight: 700; border-radius: 8px;">
-            <span style="font-size: 0.95rem;">⚙️</span> Project Settings
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
-            <span style="font-size: 0.95rem;">✨</span> AI Tools
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
-            <span style="font-size: 0.95rem;">📁</span> My Creations
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
-            <span style="font-size: 0.95rem;">📄</span> Templates
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; color: #64748B; font-size: 0.88rem; font-weight: 600; border-radius: 8px;">
-            <span style="font-size: 0.95rem;">🕒</span> History
-        </div>
-    </div>
-    <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; margin: 12px 0 8px 0;">OUTPUT SETTINGS</div>
+    <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; margin: 4px 0 8px 0;">AUDIO SETTINGS</div>
     """, unsafe_allow_html=True)
-
-    # Core Video Aspect Ratio
-    format_choice = st.selectbox(
-        "🖥️ Video Format",
-        options=[
-            "16:9 Landscape (YouTube)",
-            "9:16 Portrait (Shorts/Reels)",
-            "1:1 Square (Social)"
-        ],
-        index=0
-    )
-    if "16:9" in format_choice:
-        target_w, target_h = 1920, 1080
-        orientation = "horizontal"
-    elif "9:16" in format_choice:
-        target_w, target_h = 1080, 1920
-        orientation = "vertical"
-    else:
-        target_w, target_h = 1080, 1080
-        orientation = "all"
 
     # Background Music
     bgm_options = list(BGM_CATALOG.keys()) + ["custom_upload"]
@@ -1011,11 +1026,13 @@ def run_full_auto_video_pipeline(
     custom_bgm,
     bgm_vol: float,
     niche_k: str,
-    status_container,
-    render_bar,
+    status_container=None,
+    render_bar=None,
     existing_scenes=None,
     existing_scene_assets=None,
-    existing_selected_assets=None
+    existing_selected_assets=None,
+    progress_callback=None,
+    cancel_event=None
 ):
     """
     Automates complete end-to-end video production in background:
@@ -1026,6 +1043,32 @@ def run_full_auto_video_pipeline(
     5. Final video merge & BGM ducking
     6. Numbered assets ZIP & Dynamic YouTube SEO Kit
     """
+    def notify(pct, msg, state="info"):
+        if progress_callback:
+            try:
+                progress_callback(pct, msg, state)
+            except Exception:
+                pass
+        if status_container:
+            try:
+                if state == "error":
+                    status_container.error(msg)
+                elif state == "success":
+                    status_container.success(msg)
+                else:
+                    status_container.info(msg)
+            except Exception:
+                pass
+        if render_bar and pct is not None:
+            try:
+                render_bar.progress(min(1.0, max(0.0, float(pct))))
+            except Exception:
+                pass
+
+    if cancel_event and cancel_event.is_set():
+        notify(None, "⚠️ Video generation cancelled by user.", state="error")
+        return None
+
     cleanup_storage_cache()
     job_timestamp = time.strftime('%Y%m%d_%H%M%S')
     job_dir = DOWNLOADS_DIR / f"job_{job_timestamp}"
@@ -1035,8 +1078,7 @@ def run_full_auto_video_pipeline(
     if existing_scenes:
         scenes = existing_scenes
     else:
-        status_container.info("📝 [1/4] Analyzing script into story scenes...")
-        render_bar.progress(0.05)
+        notify(0.05, "📝 [1/4] Analyzing script into story scenes...")
         scenes = parse_script_to_scenes(
             script_text,
             default_duration=3.5,
@@ -1045,7 +1087,25 @@ def run_full_auto_video_pipeline(
             main_topic=main_topic
         )
     if not scenes:
-        status_container.error("❌ Failed to parse script into scenes.")
+        notify(None, "❌ Failed to parse script into scenes.", state="error")
+        return None
+
+    # 🧠 Studio Brain: Optimize Scene 1 Opening Hook for maximum retention
+    if scenes:
+        try:
+            enhanced_hook_kw, hook_tip = StudioBrain.optimize_hook_scene(
+                scene_text=scenes[0].get('text', ''),
+                current_keyword=scenes[0].get('keyword', main_topic)
+            )
+            scenes[0]['keyword'] = enhanced_hook_kw
+            scenes[0]['media_pref'] = 'video'  # Opening hook is always high-motion video
+            if hook_tip:
+                notify(None, hook_tip, state="info")
+        except Exception as brain_err:
+            print(f"Hook optimization notice: {brain_err}")
+
+    if cancel_event and cancel_event.is_set():
+        notify(None, "⚠️ Video generation cancelled by user.", state="error")
         return None
 
     # 2. ASSET SEARCH & SELECTION (100% in Background)
@@ -1053,8 +1113,7 @@ def run_full_auto_video_pipeline(
         scene_assets_dict = existing_scene_assets
         selected_assets_dict = existing_selected_assets
     else:
-        status_container.info(f"🔍 [2/4] Finding unique 1080p clips & AI visuals for {len(scenes)} scenes in parallel...")
-        render_bar.progress(0.15)
+        notify(0.15, f"🔍 [2/4] Finding unique 1080p clips & AI visuals for {len(scenes)} scenes in parallel...")
 
         def _search_worker(item):
             idx, sc_item = item
@@ -1096,13 +1155,16 @@ def run_full_auto_video_pipeline(
             futures = {executor.submit(_search_worker, item): item[0] for item in search_items}
             done_count = 0
             for fut in as_completed(futures):
+                if cancel_event and cancel_event.is_set():
+                    notify(None, "⚠️ Video generation cancelled by user.", state="error")
+                    return None
                 try:
                     completed_results.append(fut.result())
                 except Exception:
                     orig_idx = futures[fut]
                     completed_results.append((orig_idx, scenes[orig_idx], []))
                 done_count += 1
-                render_bar.progress(0.15 + (done_count / total_s) * 0.15)
+                notify(0.15 + (done_count / total_s) * 0.15, f"🔍 Finding visual assets ({done_count}/{total_s})...")
 
         completed_results.sort(key=lambda x: x[0])
         scene_assets_dict = {}
@@ -1119,8 +1181,7 @@ def run_full_auto_video_pipeline(
     total_scenes = len(scenes)
 
     # 3. PHASE 1: PRE-FETCH (Media + Voiceover + Overlays)
-    status_container.info("🎙️ [3/4] Synthesizing human voice narration & downloading visuals...")
-    render_bar.progress(0.35)
+    notify(0.35, "🎙️ [3/4] Synthesizing human voice narration & downloading visuals...")
 
     def _prep_single_scene(idx_scene):
         i, sc = idx_scene
@@ -1233,13 +1294,16 @@ def run_full_auto_video_pipeline(
         futures_prep = {executor.submit(_prep_single_scene, (i, sc)): i for i, sc in enumerate(scenes)}
         done_prep = 0
         for fut in as_completed(futures_prep):
+            if cancel_event and cancel_event.is_set():
+                notify(None, "⚠️ Video generation cancelled by user.", state="error")
+                return None
             try:
                 res_p = fut.result()
                 prep_results.append(res_p)
             except Exception as prep_err:
                 print(f"Pre-fetch error for scene: {prep_err}")
             done_prep += 1
-            render_bar.progress(0.35 + (done_prep / total_scenes) * 0.25)
+            notify(0.35 + (done_prep / total_scenes) * 0.25, f"🎙️ Synthesizing voice & visuals ({done_prep}/{total_scenes})...")
 
     prep_results.sort(key=lambda x: x["index"])
     for pr in prep_results:
@@ -1253,8 +1317,7 @@ def run_full_auto_video_pipeline(
             numbered_assets_for_zip.append(pr["raw_path"])
 
     # 4. PHASE 2: VIDEO ENCODING
-    status_container.info("🎬 [4/4] Multi-core video rendering & merging final video...")
-    render_bar.progress(0.60)
+    notify(0.60, "🎬 [4/4] Multi-core video rendering & merging final video...")
 
     def _encode_single_scene(prep_data):
         i = prep_data["index"]
@@ -1311,38 +1374,49 @@ def run_full_auto_video_pipeline(
         futures_enc = {executor.submit(_encode_single_scene, pd): pd["index"] for pd in prep_results}
         done_enc = 0
         for fut in as_completed(futures_enc):
+            if cancel_event and cancel_event.is_set():
+                notify(None, "⚠️ Video generation cancelled by user.", state="error")
+                return None
             try:
                 i_res, cp_res, ok_res = fut.result()
                 encoded_clips.append((i_res, cp_res, ok_res))
             except Exception as enc_err:
                 print(f"Encoding error: {enc_err}")
             done_enc += 1
-            render_bar.progress(0.60 + (done_enc / total_scenes) * 0.30)
+            notify(0.60 + (done_enc / total_scenes) * 0.30, f"🎬 Rendering scenes ({done_enc}/{total_scenes})...")
 
     encoded_clips.sort(key=lambda x: x[0])
     processed_clips = [cp for i_idx, cp, ok_val in encoded_clips if ok_val and cp.exists() and cp.stat().st_size > 0]
     if not processed_clips:
-        status_container.error("❌ Error: None of the scene clips could be encoded.")
+        notify(None, "❌ Error: None of the scene clips could be encoded.", state="error")
+        return None
+
+    if cancel_event and cancel_event.is_set():
+        notify(None, "⚠️ Video generation cancelled by user.", state="error")
         return None
 
     # Merge
-    status_container.info("🎬 Merging scene clips with seamless cuts...")
+    notify(0.92, "🎬 Merging scene clips with seamless cuts...")
     raw_merged_file = job_dir / f"scenes_merged_{job_timestamp}.mp4"
     merge_ok = merge_clips_to_final_video(processed_clips, raw_merged_file)
-    render_bar.progress(0.92)
 
     if not merge_ok or not raw_merged_file.exists() or raw_merged_file.stat().st_size == 0:
-        status_container.error("❌ Error: Failed to merge scene clips into final video.")
+        notify(None, "❌ Error: Failed to merge scene clips into final video.", state="error")
         return None
 
     final_merged_file = DOWNLOADS_DIR / f"merged_video_{job_timestamp}.mp4"
 
     active_bgm_path = None
     if bgm_k == "custom_upload" and custom_bgm:
-        custom_p = job_dir / f"custom_bgm_{custom_bgm.name}"
-        with open(custom_p, "wb") as bf:
-            bf.write(custom_bgm.getbuffer())
-        active_bgm_path = custom_p
+        if isinstance(custom_bgm, (str, Path)):
+            cand_p = Path(custom_bgm)
+            if cand_p.exists():
+                active_bgm_path = cand_p
+        elif hasattr(custom_bgm, "name") and hasattr(custom_bgm, "getbuffer"):
+            custom_p = job_dir / f"custom_bgm_{custom_bgm.name}"
+            with open(custom_p, "wb") as bf:
+                bf.write(custom_bgm.getbuffer())
+            active_bgm_path = custom_p
     elif bgm_k != "none" and bgm_k in BGM_CATALOG:
         cand_bgm = BGM_DIR / BGM_CATALOG[bgm_k]["filename"]
         if cand_bgm.exists():
@@ -1350,7 +1424,7 @@ def run_full_auto_video_pipeline(
 
     if active_bgm_path and active_bgm_path.exists():
         bgm_label = BGM_CATALOG.get(bgm_k, {}).get("name", "Suspense Track")
-        status_container.info(f"🎵 Mixing background music ({bgm_label}) under narration...")
+        notify(0.94, f"🎵 Mixing background music ({bgm_label}) under narration...")
         try:
             bgm_ok = add_background_music_to_video(
                 video_path=raw_merged_file,
@@ -1367,18 +1441,22 @@ def run_full_auto_video_pipeline(
     else:
         shutil.copy2(raw_merged_file, final_merged_file)
 
+    try:
+        os.utime(final_merged_file, None)
+    except Exception:
+        pass
+
     if not final_merged_file.exists() or final_merged_file.stat().st_size == 0:
-        status_container.error("❌ Error: Final video file could not be verified.")
+        notify(None, "❌ Error: Final video file could not be verified.", state="error")
         return None
 
     # ZIP
-    status_container.info("📦 Packaging assets into numbered ZIP archive...")
+    notify(0.96, "📦 Packaging assets into numbered ZIP archive...")
     zip_file = DOWNLOADS_DIR / f"assets_{job_timestamp}.zip"
     make_numbered_zip(processed_clips + numbered_assets_for_zip, zip_file)
-    render_bar.progress(0.96)
 
     # SEO Kit
-    status_container.info("🚀 Generating Dynamic YouTube Upload Kit & SEO...")
+    notify(0.98, "🚀 Generating Dynamic YouTube Upload Kit & SEO...")
     active_top = main_topic or (scenes[0].get('keyword') if scenes else "YouTube Video")
     seo_kit = generate_youtube_seo_kit(
         topic=active_top,
@@ -1387,8 +1465,17 @@ def run_full_auto_video_pipeline(
         niche_key=niche_k
     )
 
-    render_bar.progress(1.0)
-    status_container.success("🎉 Video generation complete!")
+    # 🧠 Studio Brain: Record completed video and learn from assets
+    try:
+        StudioBrain.record_video_completed(
+            video_path=str(final_merged_file),
+            scenes=scenes,
+            selected_assets=selected_assets_dict
+        )
+    except Exception as learn_err:
+        print(f"StudioBrain learning record notice: {learn_err}")
+
+    notify(1.0, "🎉 Video generation complete!", state="success")
 
     return {
         "merged_video": str(final_merged_file),
@@ -1399,28 +1486,9 @@ def run_full_auto_video_pipeline(
         "selected_assets": selected_assets_dict
     }
 
-# --- TOP SEARCH & STUDIO HEADER ---
-st.markdown("""
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 4px 0;">
-    <div style="display: flex; align-items: center; gap: 8px; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 999px; padding: 7px 18px; width: 100%; max-width: 440px; color: #64748B; font-size: 0.88rem; font-weight: 500;">
-        <span style="font-size: 0.95rem;">🔍</span>
-        <span>Search your projects...</span>
-    </div>
-    <div style="display: flex; align-items: center; gap: 14px;">
-        <div style="position: relative; font-size: 1.15rem; color: #64748B; cursor: pointer;">
-            🔔
-            <span style="position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; background: #EF4444; border-radius: 50%; display: inline-block;"></span>
-        </div>
-        <div style="font-size: 1.15rem; color: #64748B; cursor: pointer;">
-            ❓
-        </div>
-        <div style="display: flex; align-items: center; gap: 6px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 4px 8px; border-radius: 999px; cursor: pointer;">
-            <div style="width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #6366F1, #8B5CF6); color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800;">VC</div>
-            <span style="font-size: 0.75rem; color: #64748B;">▾</span>
-        </div>
-    </div>
-</div>
-
+# --- STUDIO HEADER ---
+brain_stats = StudioBrain.get_stats()
+st.markdown(f"""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; padding-bottom: 4px;">
     <div style="display: flex; align-items: center; gap: 12px;">
         <div style="background: #1E1B4B; color: #FFFFFF; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.45rem; box-shadow: 0 4px 12px rgba(30, 27, 75, 0.2);">🎬</div>
@@ -1434,11 +1502,11 @@ st.markdown("""
         </div>
     </div>
     <div style="text-align: right;">
-        <span style="font-size: 0.75rem; font-weight: 700; background: #ECFDF5; color: #059669; padding: 3px 10px; border-radius: 999px; border: 1px solid #A7F3D0; display: inline-flex; align-items: center; gap: 4px;">
-            <span style="display: inline-block; width: 6px; height: 6px; background: #10B981; border-radius: 50%;"></span> Ready
+        <span style="font-size: 0.75rem; font-weight: 700; background: #EEF2FF; color: #4338CA; padding: 4px 12px; border-radius: 999px; border: 1px solid #C7D2FE; display: inline-flex; align-items: center; gap: 6px;">
+            🧠 <span>Self-Learning: <b>Level {brain_stats['level']}</b></span>
         </span>
         <div style="font-size: 0.76rem; color: #94A3B8; font-weight: 500; margin-top: 3px;">
-            Generate amazing videos with AI
+            {brain_stats['total_learned_clips']} Memory Patterns Learned
         </div>
     </div>
 </div>
@@ -1448,6 +1516,97 @@ st.markdown("""
 tab1, tab2 = st.tabs(["▶️ Script to Video", "📊 CSV Batch"])
 
 with tab1:
+    # -------------------------------------------------------------
+    # 🔄 BACKGROUND RENDER JOB DISPATCHER & REAL-TIME PROGRESS
+    # -------------------------------------------------------------
+    bg_job = BackgroundRenderManager.get_job()
+    if bg_job:
+        bg_status = bg_job.get("status")
+        if bg_status == "completed":
+            res = bg_job.get("result")
+            if res and isinstance(res, dict):
+                st.session_state.merged_video = res.get("merged_video")
+                st.session_state.assets_zip = res.get("assets_zip")
+                st.session_state.youtube_seo_kit = res.get("youtube_seo_kit")
+                st.session_state.parsed_scenes = res.get("parsed_scenes")
+                st.session_state.scene_assets = res.get("scene_assets")
+                st.session_state.selected_assets = res.get("selected_assets")
+                if bg_job.get("topic"):
+                    st.session_state.custom_main_topic = bg_job.get("topic")
+            BackgroundRenderManager.clear_job()
+            st.toast("🎉 Video rendered successfully in the background!", icon="🎬")
+            st.rerun()
+
+        elif bg_status in ("error", "failed"):
+            err_msg = bg_job.get("error_message") or bg_job.get("error", "Unknown error occurred.")
+            st.error(f"❌ Background Video Generation Error: {err_msg}")
+            col_err1, _ = st.columns([2, 8])
+            with col_err1:
+                if st.button("🗑️ Dismiss Error", key="btn_dismiss_bg_error", use_container_width=True):
+                    BackgroundRenderManager.clear_job()
+                    st.rerun()
+
+        elif bg_status == "cancelled":
+            st.warning("⚠️ Background video generation was cancelled.")
+            col_can1, _ = st.columns([2, 8])
+            with col_can1:
+                if st.button("🗑️ Dismiss", key="btn_dismiss_bg_cancel", use_container_width=True):
+                    BackgroundRenderManager.clear_job()
+                    st.rerun()
+
+        elif bg_status == "running":
+            if not BackgroundRenderManager.is_running():
+                st.warning("⚠️ The previous background process seems to have stopped unexpectedly.")
+                if st.button("🔄 Reset Status", key="btn_reset_stale_job"):
+                    BackgroundRenderManager.clear_job()
+                    st.rerun()
+            else:
+                pct = float(bg_job.get("progress", 0.05))
+                status_txt = bg_job.get("status_text", "Processing video in background...")
+                elapsed_sec = int(time.time() - bg_job.get("started_at", time.time()))
+                e_mins, e_secs = divmod(elapsed_sec, 60)
+                job_topic = bg_job.get("topic", "YouTube Video")
+
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%); border: 2px solid #6366F1; border-radius: 16px; padding: 22px 24px; margin-bottom: 24px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.25);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; flex-wrap:wrap; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <span style="font-size: 1.6rem;">⚡</span>
+                            <div>
+                                <div style="font-weight: 800; color: #FFFFFF; font-size: 1.12rem; letter-spacing: -0.01em;">
+                                    Background Rendering Active: <span style="color:#A5B4FC;">{job_topic}</span>
+                                </div>
+                                <div style="font-size: 0.82rem; color: #94A3B8; margin-top:2px;">
+                                    🛡️ <b>Phone Screen Off / Minimize Safe:</b> Running on Windows background OS thread with sleep prevention.
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <span style="background: rgba(99, 102, 241, 0.25); border: 1px solid #818CF8; color: #C7D2FE; font-weight: 700; font-size: 0.85rem; padding: 4px 14px; border-radius: 999px;">
+                                ⏱️ {e_mins:02d}:{e_secs:02d} elapsed
+                            </span>
+                        </div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; color: #E0E7FF; font-size: 0.92rem; font-weight: 600; margin: 14px 0 12px 0;">
+                        {status_txt}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.progress(pct)
+
+                col_b_msg, col_b_btn = st.columns([3.5, 1.5])
+                with col_b_msg:
+                    st.caption("📱 <i>Tip: You can safely lock your phone, switch to other apps, or close this browser tab. Come back anytime to see your video!</i>", unsafe_allow_html=True)
+                with col_b_btn:
+                    if st.button("⏹️ Cancel Render", key="btn_bg_cancel_render", type="secondary", use_container_width=True):
+                        BackgroundRenderManager.cancel_job()
+                        st.toast("Cancellation requested...", icon="⏹️")
+                        st.rerun()
+
+                time.sleep(2.0)
+                st.rerun()
+
     # Mobile Connection Auto-Recovery: Restore most recently generated video if session reset
     if not st.session_state.get("merged_video"):
         recent_vids = sorted(DOWNLOADS_DIR.glob("merged_video_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -1479,6 +1638,7 @@ with tab1:
             scenes_count = len(st.session_state.get("parsed_scenes", []))
             actual_dur = get_audio_duration(merged_path)
 
+            mins_dur = actual_dur / 60.0
             st.markdown(f"""
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; padding:12px 18px; background:#FFFFFF; border:1px solid #E2E8F0; border-radius:12px;">
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -1486,21 +1646,26 @@ with tab1:
                     <span style="background:#ECFDF5; color:#059669; font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid #A7F3D0;">● Ready</span>
                 </div>
                 <div style="font-size:0.8rem; color:#64748B; font-weight:600;">
-                    {scenes_count} Scenes · {actual_dur:.1f}s Runtime · {target_w}x{target_h} · {file_mb} MB
+                    {scenes_count} Scenes · {actual_dur:.1f}s ({mins_dur:.1f} min) · {target_w}x{target_h} · {file_mb} MB
                 </div>
+            </div>
+            <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:8px 14px; margin-bottom:12px; font-size:0.82rem; color:#475569; display:flex; align-items:center; justify-content:space-between;">
+                <div>📁 <b>Saved File:</b> <code style="color:#2563EB;">{merged_path.name}</code> ({file_mb} MB)</div>
+                <div style="font-size:0.75rem; color:#10B981; font-weight:600;">✅ Permanently preserved in downloads folder</div>
             </div>
             """, unsafe_allow_html=True)
 
             # Embedded Video Player
             st.video(str(merged_path))
 
-            with st.expander("🔊 Audio Track & Voiceover Check (Tap to test audio)", expanded=False):
-                st.audio(str(merged_path), format="audio/mp4")
-                st.caption("💡 Mobile Tip: Agar mobile pe voice nahi sunai de rahi to device ka Silent Mode/Mute switch OFF karein aur Media Volume badhayein.")
+            with st.expander("🔊 Audio Track & Voiceover Check (Optional)", expanded=False):
+                st.caption("💡 Note: Video player above already plays full voiceover and music. Load this only if you want to test audio separately.")
+                if st.checkbox("Load separate audio player widget", key="chk_load_audio_player"):
+                    st.audio(str(merged_path), format="audio/mp4")
 
             # Action Buttons Row (Memory-safe streaming: 0 MB loaded on page render)
             st.write("")
-            dl_col1, dl_col2, dl_col3 = st.columns([3, 2, 1.5])
+            dl_col1, dl_col2, dl_col3, dl_col4 = st.columns([2.5, 2, 1.8, 1.2])
             with dl_col1:
                 def _stream_final_video():
                     return open(merged_path, "rb")
@@ -1530,9 +1695,57 @@ with tab1:
                             use_container_width=True
                         )
             with dl_col3:
+                if st.button("📂 Open in Explorer", key="btn_top_open_loc", use_container_width=True, help="Directly opens and highlights the video file in Windows File Explorer"):
+                    try:
+                        subprocess.Popen(f'explorer.exe /select,"{str(merged_path.resolve())}"')
+                    except Exception as exp_err:
+                        st.info(f"File path: {str(merged_path.resolve())}")
+            with dl_col4:
                 if st.button("✨ New Video", use_container_width=True, help="Clear and create a fresh video"):
                     for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
                         st.session_state.pop(k, None)
+                    st.rerun()
+
+            # 🧠 Self-Learning Feedback Loop & Quality Training Bar
+            cur_brain = StudioBrain.get_stats()
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1E1B4B 0%, #0F172A 100%); border: 1.5px solid #6366F1; border-radius: 12px; padding: 14px 18px; margin: 16px 0 12px 0;">
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:1.35rem;">🧠</span>
+                        <div>
+                            <span style="font-weight:800; color:#FFFFFF; font-size:0.92rem;">Self-Learning Video Engine</span>
+                            <span style="background:rgba(99,102,241,0.25); border:1px solid #818CF8; color:#C7D2FE; font-size:0.75rem; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:6px;">{cur_brain['level_title']}</span>
+                            <div style="font-size:0.75rem; color:#94A3B8; margin-top:2px;">
+                                📈 <b>{cur_brain['total_learned_clips']}</b> visual memory patterns · <b>{cur_brain['total_videos']}</b> videos analyzed · Quality auto-tuner active
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-size:0.78rem; font-weight:700; color:#A5B4FC;">
+                        Rate this video to train future video quality ➔
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            fb_col1, fb_col2, fb_col3 = st.columns(3)
+            with fb_col1:
+                if st.button("🔥 Viral Quality! (Boost Clips +5)", key="btn_fb_viral", use_container_width=True, help="Teaches AI to strongly prefer these styles & keywords in future videos"):
+                    cur_assets = list(st.session_state.get("selected_assets", {}).values())
+                    StudioBrain.apply_feedback("viral", cur_assets)
+                    st.toast("🧠 Brain upgraded! High-retention clips reinforced.", icon="🔥")
+                    st.rerun()
+            with fb_col2:
+                if st.button("👍 Good Visuals (+2 Score)", key="btn_fb_good", use_container_width=True):
+                    cur_assets = list(st.session_state.get("selected_assets", {}).values())
+                    StudioBrain.apply_feedback("good", cur_assets)
+                    st.toast("🧠 Brain feedback saved (+2 quality points).", icon="👍")
+                    st.rerun()
+            with fb_col3:
+                if st.button("👎 Poor Clips (Blacklist / -4)", key="btn_fb_bad", use_container_width=True, help="Down-ranks or blacklists clips so they never reappear"):
+                    cur_assets = list(st.session_state.get("selected_assets", {}).values())
+                    StudioBrain.apply_feedback("bad", cur_assets)
+                    st.toast("🧠 Bad clips down-ranked and pruned from future videos.", icon="🛡️")
                     st.rerun()
 
             # YouTube SEO Kit in an unobtrusive expander
@@ -1599,42 +1812,17 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
     # 📝 VIDEOCRAFT STUDIO SCRIPT COMPOSER CARD
     # =====================================================================
     active_niche_k = st.session_state.get("selected_niche", "history")
-    niche_keys = list(NICHE_CATALOG.keys())
-    active_niche_data = NICHE_CATALOG.get(active_niche_k, NICHE_CATALOG["history"])
-    niche_presets_dict = active_niche_data.get("presets", {})
-    all_preset_options = ["Custom Script", *list(niche_presets_dict.keys()), *list(SAMPLE_PRESETS.keys())]
 
     # Main Studio Form Card
     with st.container(border=True, key="main_studio_card"):
-        # Row 1: Video topic & Script type
-        col_top1, col_top2 = st.columns([1, 1])
-        with col_top1:
-            main_topic_input = st.text_input(
-                "📄 Video topic",
-                value=st.session_state.get("custom_main_topic", ""),
-                placeholder="e.g. The Zodiac Killer: The Unsolved Mystery"
-            )
-            st.session_state.custom_main_topic = main_topic_input
-        with col_top2:
-            preset_choice = st.selectbox(
-                "📑 Script type",
-                all_preset_options
-            )
+        # Script Input directly at top
+        initial_script = st.session_state.get("active_script_content", "")
 
-        if preset_choice != "Custom Script":
-            if preset_choice in niche_presets_dict:
-                initial_script = niche_presets_dict[preset_choice]
-            else:
-                initial_script = SAMPLE_PRESETS.get(preset_choice, "")
-        else:
-            initial_script = st.session_state.get("active_script_content", "")
-
-        # Row 2: Your script (One line = one scene)
         col_tip_l, col_tip_r = st.columns([4, 1])
         with col_tip_l:
             st.markdown("""
-            <div style="margin-top: 8px; margin-bottom: 2px;">
-                <span style="font-size: 0.9rem; font-weight: 700; color: #0F172A;">✏️ Your script <span style="font-size: 0.8rem; font-weight: 500; color: #64748B;">(One line = one scene)</span></span>
+            <div style="margin-top: 4px; margin-bottom: 4px;">
+                <span style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">✏️ Your script <span style="font-size: 0.8rem; font-weight: 500; color: #64748B;">(One line = one scene)</span></span>
             </div>
             """, unsafe_allow_html=True)
         with col_tip_r:
@@ -1649,7 +1837,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         script_input = st.text_area(
             "Your Script",
             value=initial_script,
-            height=180,
+            height=190,
             placeholder="Type or paste your script line by line...\nEach line automatically gets matched with 1080p footage, photo motion, and synced human voice narration.",
             label_visibility="collapsed"
         )
@@ -1657,6 +1845,15 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         curr_script_preview = script_input or ""
         line_count = len([line.strip() for line in curr_script_preview.split('\n') if line.strip()])
         char_count = len(curr_script_preview)
+
+        # Auto-extract or keep main topic
+        main_topic_input = st.session_state.get("custom_main_topic", "")
+        if not main_topic_input and script_input.strip():
+            first_lines = [l.strip() for l in script_input.split('\n') if l.strip()]
+            if first_lines:
+                main_topic_input = re.sub(r'^[0-9\.\-\:\#\*\s]+', '', first_lines[0])[:60].strip()
+        if not main_topic_input:
+            main_topic_input = st.session_state.get("current_topic", "YouTube_Video")
 
         col_inf_l, col_inf_r = st.columns([3, 1.5])
         with col_inf_l:
@@ -1673,7 +1870,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                         st.session_state.active_script_content = ex_script
                         st.rerun()
 
-        # Row 3: Voice narrator, Channel style, Footage mix
+        # Row 2: Voice narrator, Video ratio, Footage mix
         col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
             voice_keys = list(VOICE_CATALOG.keys())
@@ -1718,19 +1915,30 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                         st.audio(str(sample_file), format="audio/mp3", autoplay=True)
 
         with col_c2:
-            cur_niche_idx = niche_keys.index(active_niche_k) if active_niche_k in niche_keys else 0
-            selected_niche_name = st.selectbox(
-                "🏛️ Channel style",
-                options=[NICHE_CATALOG[k]["name"] for k in niche_keys],
-                index=cur_niche_idx
+            idx_ratio = 0
+            if "9:16" in cur_ratio:
+                idx_ratio = 1
+            elif "1:1" in cur_ratio:
+                idx_ratio = 2
+            format_choice = st.selectbox(
+                "🖥️ Video ratio",
+                options=[
+                    "16:9 Landscape (YouTube)",
+                    "9:16 Portrait (Shorts/Reels)",
+                    "1:1 Square (Social)"
+                ],
+                index=idx_ratio,
+                key="select_video_ratio"
             )
-            for k, v in NICHE_CATALOG.items():
-                if v["name"] == selected_niche_name:
-                    active_niche_k = k
-                    break
-            if st.session_state.get("selected_niche") != active_niche_k:
-                st.session_state.selected_niche = active_niche_k
-                st.rerun()
+            if "16:9" in format_choice:
+                target_w, target_h = 1920, 1080
+                orientation = "horizontal"
+            elif "9:16" in format_choice:
+                target_w, target_h = 1080, 1920
+                orientation = "vertical"
+            else:
+                target_w, target_h = 1080, 1080
+                orientation = "all"
 
         with col_c3:
             global_media_pref = st.selectbox(
@@ -1779,41 +1987,15 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
             Turn your ideas into stunning videos with the power of AI
         </div>
         """, unsafe_allow_html=True)
-
-    # Optional AI Script Generator (Tucked away in subtle expander)
-    with st.expander("✨ Need an AI Script? Generate Topic & Script Here", expanded=False):
-        col_gen1, col_gen2 = st.columns([3, 1])
-        with col_gen1:
-            creator_topic_input = st.text_input("Enter Topic / Idea:", value=st.session_state.get("current_topic", ""), placeholder="e.g. Lost City of Atlantis, Psychology of Money...")
-        with col_gen2:
-            creator_lang = st.selectbox("Language / Style:", ["🇮🇳 Hinglish / Hindi (Viral)", "🚩 Marathi (मराठी)", "🇺🇸 English (Documentary)"], index=0)
-
-        if st.button("✨ Write Script with AI", use_container_width=True, key="btn_gen_creator_script"):
-            if not creator_topic_input.strip():
-                st.warning("Please type a topic first.")
-            else:
-                with st.spinner("⚡ Writing high-retention script..."):
-                    if "Marathi" in creator_lang:
-                        lang_str = "Marathi"
-                    elif "Hinglish" in creator_lang or "Hindi" in creator_lang:
-                        lang_str = "Hinglish"
-                    else:
-                        lang_str = "English"
-                    gen_res = generate_creator_scripts_and_shorts(creator_topic_input, language=lang_str, openai_key=openai_key)
-                    st.session_state.generated_creator_pack = gen_res
-                    st.session_state.current_topic = gen_res["topic"]
-                    st.session_state.active_script_content = gen_res["long_script"]
-                    st.session_state.creator_shorts_drafts = gen_res["shorts"]
-                    st.success("✅ Script generated and loaded into editor above!")
-                    st.rerun()
-
     if trigger_1click:
         if not script_input.strip():
             st.warning("Please enter or select a script first.")
         elif not pixabay_key:
             st.error("Please ensure the Pixabay API key is set in the sidebar.")
+        elif BackgroundRenderManager.is_running():
+            st.warning("⚠️ A video generation job is already running in the background. Please wait or cancel it first.")
         else:
-            # Prevent mobile phone screen from sleeping during long video rendering
+            # Prevent mobile phone screen from sleeping if browser kept active
             st.components.v1.html(
                 """<script>
                 if ('wakeLock' in navigator) {
@@ -1822,65 +2004,71 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 </script>""",
                 height=0
             )
-            status_container = st.empty()
-            render_bar = st.progress(0.0)
-            pipeline_res = run_full_auto_video_pipeline(
-                script_text=script_input,
-                main_topic=main_topic_input,
-                media_pref=global_media_pref,
-                speed_mult=speed_multiplier,
-                tts_rate=tts_rate_str,
-                voice_name=selected_voice,
-                do_voice=enable_voiceover,
-                pb_key=pixabay_key,
-                ai_key=openai_key,
-                tw=target_w,
-                th=target_h,
-                orient=orientation,
-                fit_m=fit_mode,
-                kb_style=ken_burns_style,
-                b_badge=burn_badge,
-                b_style=badge_style,
-                b_pos=badge_position,
-                b_subs=burn_subtitles,
-                sub_style=subtitle_style_choice,
-                p_buffer=pause_buffer,
-                bgm_k=selected_bgm_key,
-                custom_bgm=custom_bgm_file,
-                bgm_vol=bgm_volume,
-                niche_k=active_niche_k,
-                status_container=status_container,
-                render_bar=render_bar
-            )
-            if pipeline_res:
-                st.session_state.merged_video = pipeline_res["merged_video"]
-                st.session_state.assets_zip = pipeline_res["assets_zip"]
-                st.session_state.youtube_seo_kit = pipeline_res["youtube_seo_kit"]
-                st.session_state.parsed_scenes = pipeline_res["parsed_scenes"]
-                st.session_state.scene_assets = pipeline_res["scene_assets"]
-                st.session_state.selected_assets = pipeline_res["selected_assets"]
-                st.session_state.active_script_content = script_input
-                st.session_state.custom_main_topic = main_topic_input
-                st.rerun()
+            # If custom BGM was uploaded, write to downloads folder for detached background thread
+            custom_bgm_path = None
+            if custom_bgm_file is not None:
+                try:
+                    c_bgm_dest = DOWNLOADS_DIR / f"upload_bgm_{int(time.time())}.mp3"
+                    with open(c_bgm_dest, "wb") as f_bgm:
+                        f_bgm.write(custom_bgm_file.getvalue())
+                    custom_bgm_path = str(c_bgm_dest)
+                except Exception as bgm_e:
+                    print(f"Error saving custom BGM: {bgm_e}")
 
-    # Mobile Quick Download Banner (Right under generate button so mobile users never miss it)
+            job_params = {
+                "script_text": script_input,
+                "main_topic": main_topic_input,
+                "media_pref": global_media_pref,
+                "speed_mult": speed_multiplier,
+                "tts_rate": tts_rate_str,
+                "voice_name": selected_voice,
+                "do_voice": enable_voiceover,
+                "pb_key": pixabay_key,
+                "ai_key": openai_key,
+                "tw": target_w,
+                "th": target_h,
+                "orient": orientation,
+                "fit_m": fit_mode,
+                "kb_style": ken_burns_style,
+                "b_badge": burn_badge,
+                "b_style": badge_style,
+                "b_pos": badge_position,
+                "b_subs": burn_subtitles,
+                "sub_style": subtitle_style_choice,
+                "p_buffer": pause_buffer,
+                "bgm_k": selected_bgm_key,
+                "custom_bgm": custom_bgm_path,
+                "bgm_vol": bgm_volume,
+                "niche_k": active_niche_k,
+            }
+            st.session_state.active_script_content = script_input
+            st.session_state.custom_main_topic = main_topic_input
+            ok, j_id = BackgroundRenderManager.start_job(job_params, run_full_auto_video_pipeline)
+            if ok:
+                st.toast("🚀 Video render started in background!", icon="⚡")
+                st.rerun()
+            else:
+                st.error(f"❌ Could not start background render: {j_id}")
+
+    # Quick Download & Location Banner (Right under generate button so users never miss it)
     if st.session_state.get("merged_video"):
         bot_video_path = Path(st.session_state.merged_video)
         if bot_video_path.exists():
             active_topic_name = st.session_state.get("custom_main_topic") or "YouTube_Video"
             b_slug = slugify(active_topic_name)
+            bot_mb = round(bot_video_path.stat().st_size / (1024 * 1024), 2)
             st.markdown(f"""
             <div style="background:#F0FDF4; border:1px solid #86EFAC; border-radius:12px; padding:12px 16px; margin: 14px 0 10px 0;">
                 <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <span style="font-weight:800; color:#166534; font-size:0.95rem;">🎬 Video Ready for Download!</span>
+                    <span style="font-weight:800; color:#166534; font-size:0.95rem;">🎬 Video Ready ({bot_mb} MB)!</span>
                     <span style="font-size:0.75rem; font-weight:700; color:#15803D; background:#DCFCE7; padding:2px 8px; border-radius:999px;">● Ready</span>
                 </div>
                 <div style="font-size:0.8rem; color:#4B5563; margin-top:4px;">
-                    Download directly below or scroll to the top to preview.
+                    Saved at: <code>downloads/{bot_video_path.name}</code>. Download or open below.
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            col_bot_dl1, col_bot_dl2 = st.columns([1, 1])
+            col_bot_dl1, col_bot_dl2, col_bot_dl3 = st.columns([2, 1.5, 1.5])
             with col_bot_dl1:
                 def _stream_bot_video():
                     return open(bot_video_path, "rb")
@@ -1901,300 +2089,19 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                         return open(bot_zip_path, "rb")
 
                     st.download_button(
-                        label="📦 Download Assets ZIP",
+                        label="📦 Download ZIP",
                         data=_stream_bot_zip,
                         file_name=f"{b_slug}_Assets.zip",
                         mime="application/zip",
                         key="btn_bottom_quick_dl_zip",
                         use_container_width=True
                     )
-
-    # Optional Storyboard Review expander
-    has_parsed = bool(st.session_state.get("parsed_scenes"))
-    with st.expander("🛠️ Advanced: Review Storyboard & Keywords (Optional)", expanded=(has_parsed and not has_merged)):
-        if not has_parsed:
-            st.caption("Inspect and tweak individual scene keywords and durations before rendering.")
-            if st.button("📝 Parse Script into Storyboard", key="btn_parse_storyboard", use_container_width=True):
-                if not script_input.strip():
-                    st.warning("Please enter or select a script first.")
-                else:
-                    scenes = parse_script_to_scenes(
-                        script_input,
-                        default_duration=default_duration,
-                        default_media=global_media_pref,
-                        speed=speed_multiplier,
-                        main_topic=main_topic_input
-                    )
-                    st.session_state.parsed_scenes = scenes
-                    st.session_state.scene_assets = {}
-                    st.session_state.selected_assets = {}
-                    st.session_state.pop("merged_video", None)
-                    st.session_state.pop("assets_zip", None)
-                    st.success(f"🎉 Generated {len(scenes)} scenes with scenario keywords and dynamic durations!")
-                    st.rerun()
-        else:
-            scenes = st.session_state.parsed_scenes
-            total_est_dur = sum([float(s.get('duration', default_duration)) for s in scenes])
-
-            st.markdown(f"""
-            <div class="section-title" style="margin-top:10px;">
-                <span>InVideo AI Multi-Track Timeline & Storyboard ({len(scenes)} Scenes)</span>
-                <span class="section-badge">Total Runtime: {total_est_dur:.1f}s</span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            video_count = sum(1 for s in scenes if s.get('media_pref') == 'video')
-            image_count = len(scenes) - video_count
-
-            timeline_html = [
-                '<div class="timeline-container">',
-                f'<div class="timeline-header"><div class="timeline-title">🎬 Multi-Track Project Timeline</div>'
-                f'<div style="font-size:0.78rem; font-weight:600; color:#475569;">'
-                f'Mix: <strong style="color:#1D4ED8;">{video_count} Videos ({int(video_count/len(scenes)*100)}%)</strong> · '
-                f'<strong style="color:#7E22CE;">{image_count} Photos ({int(image_count/len(scenes)*100)}%)</strong> · '
-                f'Total: <strong style="color:#059669;">{total_est_dur:.1f}s</strong>'
-                f'</div></div>',
-                '<div class="timeline-track-title">🎞️ Visual Footage Track</div>',
-                '<div class="timeline-track">'
-            ]
-            curr_offset = 0.0
-            for sc in scenes:
-                d = float(sc.get('duration', default_duration))
-                m_icon = "🎥" if sc.get('media_pref') == 'video' else "📸"
-                timeline_html.append(
-                    f'<div class="timeline-clip">'
-                    f'<div class="timeline-clip-top">'
-                    f'<span class="timeline-clip-label">{m_icon} Scene {sc["no"]}</span>'
-                    f'<span class="timeline-clip-dur">{d:.1f}s</span>'
-                    f'</div>'
-                    f'<div class="timeline-clip-text" title="{sc["text"]}">{sc["text"]}</div>'
-                    f'<div style="font-size:0.68rem; color:#94A3B8;">[{curr_offset:.1f}s - {curr_offset+d:.1f}s]</div>'
-                    f'</div>'
-                )
-                curr_offset += d
-            timeline_html.append('</div></div>')
-            st.markdown("".join(timeline_html), unsafe_allow_html=True)
-
-            for idx, sc in enumerate(scenes):
-                m_label = "🎥 Video Scene (60% Mix)" if sc.get('media_pref') == 'video' else "📸 Photo Scene (40% Mix)"
-                is_hook = sc.get('is_hook', False) or (idx == 0)
-                hook_prefix = "🔥 OPENING HOOK (TOPIC ANCHOR) · " if is_hook else ""
-                with st.expander(f"{hook_prefix}🎬 Scene {sc['no']} · {m_label} · \"{sc['text'][:60]}...\" · ⏱️ {sc.get('duration', default_duration)}s", expanded=(idx == 0)):
-                    if is_hook:
-                        st.info(f"🎯 **Hook Topic Anchor Active:** Scene 1 is strictly locked to your main topic: **{sc.get('hook_topic', sc.get('keyword'))}** (Hero Footage)")
-                    else:
-                        st.caption(f"💡 **Detected Scenario:** {sc.get('scenario', 'Cinematic scene')}")
-                    sc['text'] = st.text_area("Script Line (Subtitles)", value=sc['text'], key=f"txt_{idx}", height=75)
-                    c_kw, c_dur = st.columns([2, 1])
-                    with c_kw:
-                        sc['keyword'] = st.text_input("Scenario Stock Keyword", value=sc['keyword'], key=f"kw_{idx}", help="Scenario-based search query sent to stock libraries.")
-                    with c_dur:
-                        curr_val = float(sc.get('duration', estimate_speech_duration(sc['text'])))
-                        curr_val = max(1.5, min(curr_val, 60.0))
-                        sc['duration'] = st.number_input(
-                            "Duration (s) [Audio Paced]",
-                            min_value=1.5,
-                            max_value=60.0,
-                            value=round(curr_val, 1),
-                            step=0.5,
-                            key=f"dur_{idx}",
-                            help="Audio-driven: Visual clip timing matches voice narration length (+ natural pause buffer)."
-                        )
-
-            # Search Assets Button inside expander
-            st.write("")
-            if st.button("🔍 Find Matching Assets & AI Visuals", type="primary", use_container_width=True, key="btn_adv_find_assets"):
-                if not pixabay_key:
-                    st.error("Please ensure the Pixabay API key is set in the sidebar.")
-                else:
-                    st.session_state.scene_assets = {}
-                    st.session_state.selected_assets = {}
-                    bar_adv = st.progress(0.0)
-                    txt_adv = st.empty()
-
-                    def _search_worker_adv(item):
-                        idx, sc_item = item
-                        m_type = sc_item.get('media_pref', 'both')
-                        res = safe_search_assets(
-                            query=sc_item['keyword'],
-                            key=pixabay_key,
-                            media_type=m_type,
-                            orientation=orientation,
-                            per_page=10,
-                            sentence=sc_item['text'],
-                            openai_key=openai_key,
-                            dalle_prompt=sc_item.get('dalle_prompt', '')
-                        )
-                        if not res and m_type != "both":
-                            res = safe_search_assets(
-                                query=sc_item['keyword'],
-                                key=pixabay_key,
-                                media_type="both",
-                                orientation=orientation,
-                                per_page=10,
-                                sentence=sc_item['text'],
-                                openai_key=openai_key,
-                                dalle_prompt=sc_item.get('dalle_prompt', '')
-                            )
-                        if not res:
-                            ai_asset = generate_ai_image(
-                                prompt=sc_item.get('dalle_prompt') or sc_item['text'],
-                                openai_key=openai_key
-                            )
-                            if ai_asset:
-                                res = [ai_asset]
-                        return idx, sc_item, (res or [])
-
-                    search_items = list(enumerate(scenes))
-                    total_s = len(search_items)
-                    comp_res = []
-                    with ThreadPoolExecutor(max_workers=4) as executor:
-                        futs = {executor.submit(_search_worker_adv, it): it[0] for it in search_items}
-                        d_cnt = 0
-                        for f in as_completed(futs):
-                            try:
-                                comp_res.append(f.result())
-                            except Exception:
-                                o_idx = futs[f]
-                                comp_res.append((o_idx, scenes[o_idx], []))
-                            d_cnt += 1
-                            bar_adv.progress(d_cnt / total_s)
-                            txt_adv.info(f"⚡ Finding visuals ({d_cnt}/{total_s})...")
-
-                    comp_res.sort(key=lambda x: x[0])
-                    used_ids = set()
-                    for idx, sc, results in comp_res:
-                        st.session_state.scene_assets[sc['no']] = results
-                        pick_idx, chosen_asset = pick_unique_candidate(results, used_ids)
-                        if chosen_asset:
-                            used_ids.add(chosen_asset['id'])
-                            sc['duration'] = round(float(sc.get('duration', estimate_speech_duration(sc['text']))), 1)
-                        st.session_state.selected_assets[sc['no']] = max(0, pick_idx)
-
-                    txt_adv.empty()
-                    bar_adv.empty()
-                    st.success("✅ Visuals found!")
-                    st.rerun()
-
-            # If scene assets exist, render candidate cards & render button inside expander
-            if st.session_state.get("scene_assets"):
-                st.markdown("---")
-                st.markdown("##### 🎯 Selected Scene Visual Cards (Swap or Change):")
-                scene_assets = st.session_state.scene_assets
-                for idx, sc in enumerate(scenes):
-                    sc_no = sc['no']
-                    assets = scene_assets.get(sc_no, [])
-                    if not assets:
-                        continue
-                    curr_selected = st.session_state.selected_assets.get(sc_no, 0)
-                    best_asset = assets[min(curr_selected, len(assets) - 1)]
-
-                    st.markdown('<div class="asset-card-wrapper asset-card-selected" style="margin-bottom:12px;">', unsafe_allow_html=True)
-                    c_p, c_d, c_s = st.columns([2, 5, 2])
-                    with c_p:
-                        if best_asset.get('preview'):
-                            st.image(best_asset['preview'], use_container_width=True)
-                        else:
-                            st.caption("No preview")
-                    with c_d:
-                        if best_asset.get('type') == 'video':
-                            st.markdown(f"**Scene {sc_no} (🎥 Video):** `{sc.get('keyword', '')}`")
-                        else:
-                            st.markdown(f"**Scene {sc_no} (📸 Photo):** `{sc.get('keyword', '')}`")
-                        st.caption(f"👤 {best_asset.get('author', 'Creator')} · ID: `{best_asset.get('id', '')}`")
-                    with c_s:
-                        if len(assets) > 1:
-                            next_idx = (curr_selected + 1) % len(assets)
-                            if st.button(f"🔄 Swap ({next_idx+1}/{len(assets)})", key=f"adv_swap_{sc_no}", use_container_width=True):
-                                st.session_state.selected_assets[sc_no] = next_idx
-                                st.rerun()
-
-                        prev_key = f"scene_prev_{sc_no}"
-                        if st.button("👁️ Test Scene", key=f"adv_test_{sc_no}", use_container_width=True, help="Renders an instant 2s test preview of this single scene"):
-                            with st.spinner(f"Testing Scene {sc_no}..."):
-                                test_c_p = DOWNLOADS_DIR / f"test_clip_{sc_no}.mp4"
-                                test_raw = DOWNLOADS_DIR / f"test_raw_{sc_no}{'.jpg' if best_asset.get('type') == 'image' else '.mp4'}"
-                                if download_file(best_asset.get('download', ''), test_raw) and test_raw.exists():
-                                    test_ov = DOWNLOADS_DIR / f"test_ov_{sc_no}.png"
-                                    create_overlay_image(target_w, target_h, sc_no, test_ov, scene_text=sc.get('text', ''), show_badge=burn_badge, subtitle_style=subtitle_style_choice)
-                                    test_aud = DOWNLOADS_DIR / f"test_voice_{sc_no}.mp3"
-                                    v_dur = generate_human_voiceover(sc.get('text', ''), test_aud, voice=selected_voice, rate=tts_rate_str)
-                                    dur_val = round(max(2.0, (v_dur or 3.5) + pause_buffer), 2)
-                                    ok_prev = safe_process_scene_clip(
-                                        media_path=test_raw,
-                                        output_path=test_c_p,
-                                        target_w=target_w,
-                                        target_h=target_h,
-                                        duration=dur_val,
-                                        is_image=(best_asset.get('type') == 'image'),
-                                        overlay_path=test_ov,
-                                        audio_path=test_aud
-                                    )
-                                    if ok_prev and test_c_p.exists():
-                                        st.session_state[prev_key] = str(test_c_p)
-                                        st.rerun()
-
-                    if st.session_state.get(f"scene_prev_{sc_no}"):
-                        pv_file = Path(st.session_state[f"scene_prev_{sc_no}"])
-                        if pv_file.exists():
-                            st.video(str(pv_file))
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                st.write("")
-                if st.button("🚀 Render & Merge Video from Storyboard", type="primary", use_container_width=True, key="btn_adv_render"):
-                    st.components.v1.html(
-                        """<script>
-                        if ('wakeLock' in navigator) {
-                            navigator.wakeLock.request('screen').catch(function(){});
-                        }
-                        </script>""",
-                        height=0
-                    )
-                    status_c = st.empty()
-                    r_bar = st.progress(0.0)
-                    pipeline_res = run_full_auto_video_pipeline(
-                        script_text=st.session_state.get("active_script_content", script_input),
-                        main_topic=st.session_state.get("custom_main_topic", main_topic_input),
-                        media_pref=global_media_pref,
-                        speed_mult=speed_multiplier,
-                        tts_rate=tts_rate_str,
-                        voice_name=selected_voice,
-                        do_voice=enable_voiceover,
-                        pb_key=pixabay_key,
-                        ai_key=openai_key,
-                        tw=target_w,
-                        th=target_h,
-                        orient=orientation,
-                        fit_m=fit_mode,
-                        kb_style=ken_burns_style,
-                        b_badge=burn_badge,
-                        b_style=badge_style,
-                        b_pos=badge_position,
-                        b_subs=burn_subtitles,
-                        sub_style=subtitle_style_choice,
-                        p_buffer=pause_buffer,
-                        bgm_k=selected_bgm_key,
-                        custom_bgm=custom_bgm_file,
-                        bgm_vol=bgm_volume,
-                        niche_k=active_niche_k,
-                        status_container=status_c,
-                        render_bar=r_bar,
-                        existing_scenes=scenes,
-                        existing_scene_assets=st.session_state.scene_assets,
-                        existing_selected_assets=st.session_state.selected_assets
-                    )
-                    if pipeline_res:
-                        st.session_state.merged_video = pipeline_res["merged_video"]
-                        st.session_state.assets_zip = pipeline_res["assets_zip"]
-                        st.session_state.youtube_seo_kit = pipeline_res["youtube_seo_kit"]
-                        st.session_state.parsed_scenes = pipeline_res["parsed_scenes"]
-                        st.session_state.scene_assets = pipeline_res["scene_assets"]
-                        st.session_state.selected_assets = pipeline_res["selected_assets"]
-                        st.success("🎉 Video rendered and merged successfully!")
-                        st.rerun()
-
-
-
+            with col_bot_dl3:
+                if st.button("📂 Open Folder", key="btn_bot_open_folder", use_container_width=True, help="Opens the folder containing your video in Windows File Explorer"):
+                    try:
+                        subprocess.Popen(f'explorer.exe /select,"{str(bot_video_path.resolve())}"')
+                    except Exception as b_err:
+                        st.info(f"File path: {str(bot_video_path.resolve())}")
 
 # =====================================================================
 # TAB 2: CSV BATCH ASSET FINDER
@@ -2299,7 +2206,7 @@ with tab2:
                 c_dir = DOWNLOADS_DIR / f"csv_job_{job_ts}"
                 c_dir.mkdir(parents=True, exist_ok=True)
                 clips = []
-                for no, asset in csv_picks.items():
+                for idx, (no, asset) in enumerate(csv_picks.items()):
                     ext = ".jpg" if asset['type'] == 'image' else ".mp4"
                     dest = c_dir / f"raw_{no}{ext}"
                     is_image = (asset['type'] == 'image')
@@ -2311,7 +2218,7 @@ with tab2:
                     overlay_p = c_dir / f"overlay_{no}.png"
                     create_overlay_image(target_w, target_h, no, overlay_p, scene_text=csv_res[no]['row'].get('Description'), show_badge=burn_badge, show_subtitle=burn_subtitles)
                     clip_p = c_dir / f"{no}_clip.mp4"
-                    if safe_process_scene_clip(media_path=dest, output_path=clip_p, target_w=target_w, target_h=target_h, duration=default_duration, is_image=is_image, overlay_path=overlay_p):
+                    if safe_process_scene_clip(media_path=dest, output_path=clip_p, target_w=target_w, target_h=target_h, duration=default_duration, is_image=is_image, overlay_path=overlay_p, scene_index=idx):
                         clips.append(clip_p)
                 if clips:
                     m_dest = DOWNLOADS_DIR / f"csv_merged_{job_ts}.mp4"

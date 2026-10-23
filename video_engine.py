@@ -5,7 +5,7 @@ import subprocess
 import zipfile
 import shutil
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import requests
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
@@ -56,22 +56,46 @@ def get_ffmpeg_path() -> str:
     """Returns absolute path to the bundled FFmpeg binary."""
     return imageio_ffmpeg.get_ffmpeg_exe()
 
-def _ensure_whoosh_sfx() -> Path:
-    """Guarantees a clean, subtle transition whoosh SFX exists in the bgm directory."""
+def _ensure_sfx_assets() -> Tuple[Path, Path]:
+    """Guarantees studio-grade Hook Boom and Transition Whoosh SFX exist in the bgm directory."""
     whoosh_path = BGM_DIR / "whoosh.mp3"
+    boom_path = BGM_DIR / "hook_boom.mp3"
+    ffmpeg = get_ffmpeg_path()
+
+    # 1. Transition Whoosh: High-speed cinematic air swoosh on scene cuts
     if not whoosh_path.exists() or whoosh_path.stat().st_size == 0:
         try:
-            ffmpeg = get_ffmpeg_path()
             subprocess.run([
                 ffmpeg, "-y", "-f", "lavfi",
-                "-i", "anoisesrc=color=pink:duration=0.35:amplitude=0.35,bandpass=f=900:width_type=h:width=700,afade=t=in:st=0:d=0.10,afade=t=out:st=0.10:d=0.25,volume=0.25",
+                "-i", "anoisesrc=color=pink:duration=0.45:amplitude=0.45,bandpass=f=1100:width_type=h:width=900,afade=t=in:st=0:d=0.08,afade=t=out:st=0.08:d=0.35,volume=0.38",
                 str(whoosh_path)
             ], capture_output=True, timeout=10)
         except Exception:
             pass
-    return whoosh_path
 
-_ensure_whoosh_sfx()
+    # 2. Hook Boom: Deep sub-bass cinematic trailer impact at video start (0.0s)
+    if not boom_path.exists() or boom_path.stat().st_size == 0:
+        try:
+            filter_boom = (
+                "[0:a]volume=1.8,lowpass=f=140,afade=t=out:st=0.2:d=1.4[sub];"
+                "[1:a]volume=0.45,lowpass=f=400,afade=t=out:st=0.08:d=1.2[punch];"
+                "[sub][punch]amix=inputs=2:duration=first,volume=1.2[aout]"
+            )
+            subprocess.run([
+                ffmpeg, "-y",
+                "-f", "lavfi", "-i", "sine=frequency=80:duration=1.6",
+                "-f", "lavfi", "-i", "anoisesrc=color=pink:duration=1.6:amplitude=0.5",
+                "-filter_complex", filter_boom,
+                "-map", "[aout]",
+                "-c:a", "libmp3lame", "-q:a", "2",
+                str(boom_path)
+            ], capture_output=True, timeout=12)
+        except Exception:
+            pass
+
+    return whoosh_path, boom_path
+
+_ensure_sfx_assets()
 
 
 def download_file(url: str, dest_path: Path, timeout: int = 150) -> bool:
@@ -559,14 +583,25 @@ def process_scene_clip(
         overlay_input_idx = input_count
         input_count += 1
 
-    # Audio track (Voiceover speech + optional Scene-Cut Whoosh SFX)
+    # Audio track (Mastered Human Narration + Automatic Cinematic Sound Design)
+    whoosh_path, boom_path = _ensure_sfx_assets()
     has_custom_audio = bool(audio_path and Path(audio_path).exists() and Path(audio_path).stat().st_size > 0)
-    whoosh_file = BGM_DIR / "whoosh.mp3"
-    use_whoosh = bool(whoosh_sfx and scene_index > 0 and whoosh_file.exists())
 
-    if use_whoosh:
-        cmd += ["-i", str(whoosh_file)]
-        whoosh_input_idx = input_count
+    active_sfx = None
+    sfx_vol = 0.28
+    if whoosh_sfx:
+        if scene_index == 0 and boom_path.exists():
+            # Scene 1 Opening Hook Impact: Sub-bass trailer punch for instant viewer retention
+            active_sfx = boom_path
+            sfx_vol = 0.40
+        elif scene_index > 0 and whoosh_path.exists():
+            # Scene Transitions: Crisp cinematic whoosh swish on cuts
+            active_sfx = whoosh_path
+            sfx_vol = 0.28
+
+    if active_sfx:
+        cmd += ["-i", str(active_sfx)]
+        sfx_input_idx = input_count
         input_count += 1
 
         if has_custom_audio:
@@ -574,20 +609,20 @@ def process_scene_clip(
             audio_input_idx = input_count
             input_count += 1
             audio_filter = (
-                f"[{whoosh_input_idx}:a]volume=0.28,apad=whole_dur={duration}[w_a];"
-                f"[{audio_input_idx}:a]volume=1.25,apad=whole_dur={duration}[v_a];"
-                f"[v_a][w_a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,aformat=channel_layouts=stereo:sample_rates=44100[a]"
+                f"[{sfx_input_idx}:a]volume={sfx_vol},apad=whole_dur={duration}[sfx_a];"
+                f"[{audio_input_idx}:a]volume=1.28,apad=whole_dur={duration}[v_a];"
+                f"[v_a][sfx_a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,aformat=channel_layouts=stereo:sample_rates=44100[a]"
             )
         else:
             audio_filter = (
-                f"[{whoosh_input_idx}:a]volume=0.28,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+                f"[{sfx_input_idx}:a]volume={sfx_vol},apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
             )
     else:
         if has_custom_audio:
             cmd += ["-i", str(audio_path)]
             audio_input_idx = input_count
             input_count += 1
-            audio_filter = f"[{audio_input_idx}:a]volume=1.25,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+            audio_filter = f"[{audio_input_idx}:a]volume=1.28,apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
         else:
             cmd += ["-f", "lavfi", "-t", str(duration), "-i", "anullsrc=r=44100:cl=stereo"]
             audio_input_idx = input_count
@@ -753,10 +788,14 @@ def add_background_music_to_video(
         str(output_path)
     ]
 
-    bgm_timeout = max(300, int(dur * 2))
+    bgm_timeout = max(600, int(dur * 3))
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=bgm_timeout)
         if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+            try:
+                os.utime(output_path, None)
+            except Exception:
+                pass
             return True
         else:
             print(f"Sidechain BGM error: {res.stderr[-300:]}")
@@ -789,6 +828,10 @@ def add_background_music_to_video(
     try:
         res2 = subprocess.run(cmd_amix, capture_output=True, text=True, timeout=bgm_timeout)
         if res2.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+            try:
+                os.utime(output_path, None)
+            except Exception:
+                pass
             return True
     except Exception as e_amix:
         print(f"Amix fallback error: {e_amix}")
@@ -808,8 +851,14 @@ def add_background_music_to_video(
             "-movflags", "+faststart",
             str(output_path)
         ]
-        res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=max(450, int(dur * 3)))
-        return res_fb.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+        res_fb = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=max(1800, int(dur * 4)))
+        ok_fb = res_fb.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+        if ok_fb:
+            try:
+                os.utime(output_path, None)
+            except Exception:
+                pass
+        return ok_fb
     except Exception as e2:
         print(f"BGM fallback exception: {e2}")
         return False
@@ -867,7 +916,9 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
             "-movflags", "+faststart",
             str(output_video_path)
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # Dynamic timeout scaling based on clip count (supports 20-60+ min videos with 200-500 clips)
+        concat_timeout = max(600, len(valid_clips) * 4)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=concat_timeout)
         if res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
             return True
@@ -889,7 +940,7 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
                 "-f", "mpegts",
                 str(ts_p)
             ]
-            r_ts = subprocess.run(cmd_ts, capture_output=True, text=True, timeout=40)
+            r_ts = subprocess.run(cmd_ts, capture_output=True, text=True, timeout=60)
             
             # If copy failed (e.g. audio missing or incompatible codec), transmux with audio fallback
             if r_ts.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
@@ -903,7 +954,7 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
                     "-f", "mpegts",
                     str(ts_p)
                 ]
-                r_rec = subprocess.run(cmd_ts_rec, capture_output=True, text=True, timeout=50)
+                r_rec = subprocess.run(cmd_ts_rec, capture_output=True, text=True, timeout=80)
                 if r_rec.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
                     # 2. Only if clip literally had no audio stream, inject silent baseline
                     cmd_ts_fix = [
@@ -917,7 +968,7 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
                         "-f", "mpegts",
                         str(ts_p)
                     ]
-                    r_fix = subprocess.run(cmd_ts_fix, capture_output=True, text=True, timeout=50)
+                    r_fix = subprocess.run(cmd_ts_fix, capture_output=True, text=True, timeout=80)
                     if r_fix.returncode != 0 or not ts_p.exists() or ts_p.stat().st_size == 0:
                         transmux_ok = False
                         break
@@ -939,7 +990,8 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
                 "-movflags", "+faststart",
                 str(output_video_path)
             ]
-            r_tm = subprocess.run(cmd_ts_merge, capture_output=True, text=True, timeout=120)
+            ts_merge_timeout = max(600, len(valid_clips) * 4)
+            r_tm = subprocess.run(cmd_ts_merge, capture_output=True, text=True, timeout=ts_merge_timeout)
             if r_tm.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 return True
@@ -971,45 +1023,50 @@ def merge_clips_to_final_video(clip_paths: List[Any], output_video_path: Path) -
             "-movflags", "+faststart",
             str(output_video_path)
         ]
-        res = subprocess.run(cmd_reencode, capture_output=True, text=True, timeout=300)
+        reencode_timeout = max(2400, len(valid_clips) * 20)
+        res = subprocess.run(cmd_reencode, capture_output=True, text=True, timeout=reencode_timeout)
         if res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
             return True
     except Exception as e:
         print(f"Concat re-encoding failed: {e}")
 
-    # Strategy 4: Filter Complex Fallback
-    try:
-        inputs = []
-        filter_parts = []
-        for i, p in enumerate(valid_clips):
-            inputs.extend(["-i", str(p)])
-            filter_parts.append(f"[{i}:v][{i}:a]")
-        
-        filter_str = f"{''.join(filter_parts)}concat=n={len(valid_clips)}:v=1:a=1[v][a]"
-        cmd_fallback = [
-            ffmpeg, "-y",
-            *inputs,
-            "-filter_complex", filter_str,
-            "-map", "[v]",
-            "-map", "[a]",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "25",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            str(output_video_path)
-        ]
-        res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=300)
-        ok = res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        return ok
-    except Exception as e:
-        print(f"Fallback filter concat error: {e}")
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        return False
+    # Strategy 4: Filter Complex Fallback (Only safe for <= 80 clips to prevent Windows CLI overflow)
+    if len(valid_clips) <= 80:
+        try:
+            inputs = []
+            filter_parts = []
+            for i, p in enumerate(valid_clips):
+                inputs.extend(["-i", str(p)])
+                filter_parts.append(f"[{i}:v][{i}:a]")
+            
+            filter_str = f"{''.join(filter_parts)}concat=n={len(valid_clips)}:v=1:a=1[v][a]"
+            cmd_fallback = [
+                ffmpeg, "-y",
+                *inputs,
+                "-filter_complex", filter_str,
+                "-map", "[v]",
+                "-map", "[a]",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "25",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-movflags", "+faststart",
+                str(output_video_path)
+            ]
+            res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=max(1200, len(valid_clips) * 15))
+            ok = res.returncode == 0 and output_video_path.exists() and output_video_path.stat().st_size > 0
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return ok
+        except Exception as e:
+            print(f"Fallback filter concat error: {e}")
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return False
+
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    return False
 
 def make_numbered_zip(file_paths: List[Path], zip_output_path: Path) -> bool:
     """Pack individual numbered asset clips into a ZIP file."""
