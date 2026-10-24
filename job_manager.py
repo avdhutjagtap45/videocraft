@@ -161,6 +161,7 @@ class BackgroundRenderManager:
                         custom_bgm=params.get("custom_bgm"),
                         bgm_vol=params.get("bgm_vol", 0.12),
                         niche_k=params.get("niche_k", "history"),
+                        sfx_vol=params.get("sfx_vol", 0.35),
                         status_container=None,
                         render_bar=None,
                         existing_scenes=params.get("existing_scenes"),

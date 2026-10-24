@@ -142,14 +142,16 @@ class StudioBrain:
         cls,
         candidates: List[Dict[str, Any]],
         keyword: str = "",
-        is_scene_1_hook: bool = False
+        is_scene_1_hook: bool = False,
+        main_topic: str = ""
     ) -> List[Dict[str, Any]]:
         """
         Ranks stock footage candidates using learned intelligence:
-        1. Completely filters out blacklisted / low-rated clips.
-        2. Boosts clips that received positive creator feedback previously.
-        3. Prioritizes 1080p, 60fps, 4K and high resolution.
-        4. For Scene 1 (Hook), strictly ranks high-motion hero clips to the very top.
+        1. Prioritizes TOPIC RELEVANCE: strictly ensures assets actually depict the video subject.
+        2. Completely filters out blacklisted / low-rated clips.
+        3. Boosts clips that received positive creator feedback previously.
+        4. Prioritizes 1080p, 60fps, 4K and high resolution.
+        5. For Scene 1 (Hook), strictly ranks high-motion hero clips to the very top.
         """
         if not candidates:
             return []
@@ -157,6 +159,11 @@ class StudioBrain:
         brain = cls.load_brain()
         learned = brain.get("learned_clips", {})
         blacklisted = set(brain.get("blacklisted_ids", []))
+
+        # Build topic keywords for relevance scoring
+        topic_ref = f"{main_topic} {keyword}".lower()
+        topic_words = set(re.findall(r'[a-zA-Z0-9]{3,}', topic_ref))
+        topic_words = {w for w in topic_words if w not in ("the", "and", "for", "with", "video", "clip", "cinematic", "shot", "documentary", "style")}
 
         filtered: List[Dict[str, Any]] = []
         for cand in candidates:
@@ -182,6 +189,14 @@ class StudioBrain:
             if c_id in learned:
                 learned_entry = learned[c_id]
                 score += (learned_entry.get("score", 0) * 10)
+
+            # TOPIC RELEVANCE BONUS (Dominates over generic off-topic clips):
+            tags = (cand.get("tags") or "").lower()
+            m_kw = (cand.get("matched_keyword") or "").lower()
+            cand_text = f"{tags} {m_kw}"
+            hits = sum(1 for tw in topic_words if tw in cand_text)
+            if hits > 0:
+                score += min(180, hits * 60)  # +60 to +180 topic match bonus!
 
             # Scene 1 Hook bonus (motion and hero clips)
             if is_scene_1_hook and cand.get("type") == "video":

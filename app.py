@@ -39,8 +39,10 @@ except ImportError:
     try:
         from pixabay_api import generate_ai_image
     except ImportError:
-        def generate_ai_image(prompt, openai_key=DEFAULT_OPENAI_KEY, dest_path=None):
+        def generate_ai_image(prompt, openai_key=DEFAULT_OPENAI_KEY, dest_path=None, width=1280, height=720, **kwargs):
             return None
+
+
     try:
         from pixabay_api import ensure_unique_selections, pick_unique_candidate
     except ImportError:
@@ -67,6 +69,10 @@ importlib.reload(tts_engine)
 import niche_engine
 importlib.reload(niche_engine)
 from niche_engine import NICHE_CATALOG, generate_youtube_seo_kit, generate_youtube_thumbnail
+import ai_script_writer
+importlib.reload(ai_script_writer)
+from ai_script_writer import generate_ai_script, translate_script_free
+
 
 
 from video_engine import (
@@ -117,24 +123,95 @@ APP_DIR = Path(__file__).parent
 DOWNLOADS_DIR = APP_DIR / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-def cleanup_storage_cache(max_age_hours: float = 48.0, max_folder_mb: float = 35000.0):
+def remove_old_video_files(delete_current: bool = True):
     """
-    Automatic Storage Manager (Optimized for Local Creator Desktop & Long 20-60+ min Videos):
-    1. Keeps rendered videos safe for at least 48 hours.
-    2. Protects active rendering jobs for at least 6 hours (21600s), fully supporting 20-60+ min videos.
-    3. NEVER deletes the currently loaded session video, recent merged_video_*.mp4 files, or assets_*.zip.
-    4. Only cleans up intermediate job folders when disk space limit (35 GB) is reached.
+    Directly removes old generated videos, archives, and temporary job directories from disk.
+    Called when the user clicks 'New Video' or starts generating a fresh video.
+    Guarantees files are not permanently stored on disk once work is completed.
+    Safely protects studio_brain.json, active_render_job.json, and system assets.
+    """
+    try:
+        if not DOWNLOADS_DIR.exists():
+            return 0
+
+        active_job = BackgroundRenderManager.get_job()
+        active_job_id = active_job.get("job_id") if (active_job and BackgroundRenderManager.is_running()) else None
+
+        cur_vid = None
+        cur_zip = None
+        if not delete_current and hasattr(st, "session_state"):
+            if st.session_state.get("merged_video"):
+                try:
+                    cur_vid = Path(st.session_state.merged_video).resolve()
+                except Exception:
+                    pass
+            if st.session_state.get("assets_zip"):
+                try:
+                    cur_zip = Path(st.session_state.assets_zip).resolve()
+                except Exception:
+                    pass
+
+        removed_count = 0
+        for item in DOWNLOADS_DIR.iterdir():
+            try:
+                # System critical files that must NEVER be deleted
+                if item.name in ("studio_brain.json", "active_render_job.json", "sfx", "ai_generated", ".gitkeep"):
+                    continue
+
+                # Never delete active render job in progress
+                if active_job_id and active_job_id in item.name:
+                    continue
+
+                # Skip current video if delete_current is False
+                if not delete_current:
+                    if cur_vid and item.resolve() == cur_vid:
+                        continue
+                    if cur_zip and item.resolve() == cur_zip:
+                        continue
+
+                # Delete merged videos, asset archives, intermediate scene merges & uploaded BGM
+                if item.is_file():
+                    if (
+                        item.name.startswith("merged_video_")
+                        or item.name.startswith("assets_")
+                        or item.name.startswith("scenes_merged_")
+                        or item.name.startswith("upload_bgm_")
+                        or item.name.startswith("csv_merged_")
+                        or item.name.startswith("csv_assets_")
+                    ):
+                        item.unlink(missing_ok=True)
+                        removed_count += 1
+                        print(f"[Storage Cleanup] Removed video file: {item.name}")
+
+                # Delete intermediate job directories
+                elif item.is_dir():
+                    if item.name.startswith("job_") or item.name.startswith("csv_job_"):
+                        shutil.rmtree(item, ignore_errors=True)
+                        removed_count += 1
+                        print(f"[Storage Cleanup] Removed job folder: {item.name}")
+
+            except Exception as e:
+                print(f"[Storage Cleanup] Error removing {item.name}: {e}")
+        return removed_count
+    except Exception as ex:
+        print(f"[Storage Cleanup] remove_old_video_files exception: {ex}")
+        return 0
+
+def cleanup_storage_cache(max_age_hours: float = 6.0, max_folder_mb: float = 8000.0):
+    """
+    Automatic Storage Manager:
+    Cleans up old jobs and temporary files so disk storage is not permanently clogged.
+    Only protects actively running render jobs and system essentials.
     """
     try:
         if not DOWNLOADS_DIR.exists():
             return
 
         now = time.time()
-        max_age_sec = max_age_hours * 3600  # 48 hours
-        protect_window_sec = 21600  # 6 hours protection window for long 20-60+ min videos
+        max_age_sec = max_age_hours * 3600
+        protect_window_sec = 7200  # 2 hours protection window for active background renders
 
-        # Gather explicitly protected paths (session files and recent final videos)
-        protected_names = set()
+        protected_names = {"studio_brain.json", "active_render_job.json", "sfx", "ai_generated", ".gitkeep"}
         try:
             if hasattr(st, "session_state"):
                 if st.session_state.get("merged_video"):
@@ -147,15 +224,6 @@ def cleanup_storage_cache(max_age_hours: float = 48.0, max_folder_mb: float = 35
                     protected_names.add(Path(st.session_state.csv_zip).name)
         except Exception:
             pass
-
-        # Protect 5 most recent merged_video_*.mp4 files unconditionally
-        recent_finals = sorted(DOWNLOADS_DIR.glob("merged_video_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
-        for rf in recent_finals[:5]:
-            protected_names.add(rf.name)
-
-        recent_zips = sorted(DOWNLOADS_DIR.glob("assets_*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
-        for rz in recent_zips[:5]:
-            protected_names.add(rz.name)
 
         items = []
         total_bytes = 0
@@ -172,7 +240,7 @@ def cleanup_storage_cache(max_age_hours: float = 48.0, max_folder_mb: float = 35
             except Exception:
                 continue
 
-        # Rule 1: Delete temporary job folders older than max_age_hours (48h) and outside protection window (6h)
+        # Rule 1: Purge intermediate job folders and old videos older than max_age_hours
         remaining_items = []
         for item, mtime, sz in items:
             if item.name in protected_names:
@@ -180,12 +248,7 @@ def cleanup_storage_cache(max_age_hours: float = 48.0, max_folder_mb: float = 35
                 continue
 
             age = now - mtime
-            # Only delete intermediate job folders or non-final files older than 48 hours
-            if age > max_age_sec and age > protect_window_sec:
-                # Never delete final output files in Rule 1
-                if item.name.startswith("merged_video_"):
-                    remaining_items.append((item, mtime, sz))
-                    continue
+            if age > max_age_sec:
                 try:
                     if item.is_dir():
                         shutil.rmtree(item, ignore_errors=True)
@@ -197,15 +260,12 @@ def cleanup_storage_cache(max_age_hours: float = 48.0, max_folder_mb: float = 35
             else:
                 remaining_items.append((item, mtime, sz))
 
-        # Rule 2: If total folder size exceeds max_folder_mb (35GB), purge ONLY oldest temporary scene folders
+        # Rule 2: If total folder size exceeds max_folder_mb, purge oldest unprotected items
         max_bytes = max_folder_mb * 1024 * 1024
         if total_bytes > max_bytes:
             remaining_items.sort(key=lambda x: x[1])
             for item, mtime, sz in remaining_items:
                 if item.name in protected_names or (now - mtime) < protect_window_sec:
-                    continue  # NEVER delete protected files or active renders
-                # NEVER purge final merged videos in Rule 2
-                if item.name.startswith("merged_video_"):
                     continue
                 if total_bytes <= (max_bytes * 0.7):
                     break
@@ -664,10 +724,11 @@ def safe_search_assets(
     key: str = DEFAULT_PIXABAY_KEY,
     media_type: str = "both",
     orientation: str = "horizontal",
-    per_page: int = 10,
+    per_page: int = 15,
     sentence: str = "",
     openai_key: str = DEFAULT_OPENAI_KEY,
-    dalle_prompt: str = ""
+    dalle_prompt: str = "",
+    main_topic: str = ""
 ):
     try:
         return search_assets(
@@ -678,7 +739,8 @@ def safe_search_assets(
             per_page=per_page,
             sentence=sentence,
             openai_key=openai_key,
-            dalle_prompt=dalle_prompt
+            dalle_prompt=dalle_prompt,
+            main_topic=main_topic
         )
     except TypeError:
         return search_assets(query=query, key=key, media_type=media_type, orientation=orientation, per_page=per_page)
@@ -803,6 +865,16 @@ with st.sidebar:
         step=0.01,
         format="%.2f",
         disabled=(selected_bgm_key == "none")
+    )
+
+    sfx_volume = st.slider(
+        "🔊 Transition SFX Volume (Whoosh & Boom)",
+        min_value=0.0,
+        max_value=0.80,
+        value=0.35,
+        step=0.05,
+        format="%.2f",
+        help="Volume of cinematic whoosh transitions and Scene 1 hero boom."
     )
 
     # Advanced Settings in Clean Collapsed Expanders
@@ -1026,6 +1098,7 @@ def run_full_auto_video_pipeline(
     custom_bgm,
     bgm_vol: float,
     niche_k: str,
+    sfx_vol: float = 0.35,
     status_container=None,
     render_bar=None,
     existing_scenes=None,
@@ -1118,31 +1191,49 @@ def run_full_auto_video_pipeline(
         def _search_worker(item):
             idx, sc_item = item
             m_type_to_search = sc_item.get('media_pref', 'both')
+            topic_to_use = sc_item.get('main_topic') or sc_item.get('hook_topic') or main_topic
+
+            # 🎨 100% Custom AI Visuals Mode: Directly generate exact FLUX AI visual per scene!
+            if m_type_to_search == "ai_flux":
+                prompt_text = sc_item.get('dalle_prompt') or (f"Cinematic photorealistic 8k view of {topic_to_use}: {sc_item['text']}" if topic_to_use else sc_item['text'])
+                ai_asset = generate_ai_image(
+                    prompt=prompt_text,
+                    openai_key=ai_key,
+                    width=tw,
+                    height=th
+                )
+                return idx, sc_item, ([ai_asset] if ai_asset else [])
+
             res = safe_search_assets(
                 query=sc_item['keyword'],
                 key=pb_key,
                 media_type=m_type_to_search,
                 orientation=orient,
-                per_page=10,
+                per_page=15,
                 sentence=sc_item['text'],
                 openai_key=ai_key,
-                dalle_prompt=sc_item.get('dalle_prompt', '')
+                dalle_prompt=sc_item.get('dalle_prompt', ''),
+                main_topic=topic_to_use
             )
-            if not res and m_type_to_search != "both":
+            if not res and m_type_to_search not in ["both", "video"]:
                 res = safe_search_assets(
                     query=sc_item['keyword'],
                     key=pb_key,
                     media_type="both",
                     orientation=orient,
-                    per_page=10,
+                    per_page=15,
                     sentence=sc_item['text'],
                     openai_key=ai_key,
-                    dalle_prompt=sc_item.get('dalle_prompt', '')
+                    dalle_prompt=sc_item.get('dalle_prompt', ''),
+                    main_topic=topic_to_use
                 )
             if not res:
+                prompt_text = sc_item.get('dalle_prompt') or (f"Cinematic photorealistic 8k view of {topic_to_use}: {sc_item['text']}" if topic_to_use else sc_item['text'])
                 ai_asset = generate_ai_image(
-                    prompt=sc_item.get('dalle_prompt') or sc_item['text'],
-                    openai_key=ai_key
+                    prompt=prompt_text,
+                    openai_key=ai_key,
+                    width=tw,
+                    height=th
                 )
                 if ai_asset:
                     res = [ai_asset]
@@ -1177,6 +1268,14 @@ def run_full_auto_video_pipeline(
                 used_asset_ids.add(chosen_asset.get('id'))
                 sc['duration'] = round(float(sc.get('duration', estimate_speech_duration(sc['text'], speed=speed_mult))), 1)
             selected_assets_dict[sc['no']] = max(0, pick_idx)
+
+        # Override with any custom Director Re-rolled visuals
+        if existing_selected_assets and isinstance(existing_selected_assets, dict):
+            for sc_k, custom_cand in existing_selected_assets.items():
+                if custom_cand and isinstance(custom_cand, dict):
+                    scene_assets_dict[sc_k] = [custom_cand] + scene_assets_dict.get(sc_k, [])
+                    selected_assets_dict[sc_k] = 0
+
 
     total_scenes = len(scenes)
 
@@ -1213,7 +1312,7 @@ def run_full_auto_video_pipeline(
         if not raw_path or not raw_path.exists():
             ai_path = job_dir / f"raw_{sc_no}_ai_fallback.jpg"
             prompt = sc.get('dalle_prompt') or f"{sc.get('keyword', '')} {sc.get('scenario', '')} {sc.get('text', '')}".strip()
-            ai_res = generate_ai_image(prompt=prompt, openai_key=ai_key, dest_path=ai_path)
+            ai_res = generate_ai_image(prompt=prompt, openai_key=ai_key, dest_path=ai_path, width=tw, height=th)
             if ai_path.exists() and ai_path.stat().st_size > 500:
                 raw_path = ai_path
                 chosen_asset = ai_res or {
@@ -1341,7 +1440,8 @@ def run_full_auto_video_pipeline(
             audio_path=audio_path,
             fit_mode=fit_m,
             ken_burns_style=kb_style,
-            scene_index=i
+            scene_index=i,
+            sfx_vol=sfx_vol
         )
 
         if not ok or not clip_path.exists() or clip_path.stat().st_size == 0:
@@ -1364,7 +1464,8 @@ def run_full_auto_video_pipeline(
                 audio_path=audio_path,
                 fit_mode=fit_m,
                 ken_burns_style=kb_style,
-                scene_index=i
+                scene_index=i,
+                sfx_vol=sfx_vol
             )
 
         return i, clip_path, ok
@@ -1454,6 +1555,12 @@ def run_full_auto_video_pipeline(
     notify(0.96, "📦 Packaging assets into numbered ZIP archive...")
     zip_file = DOWNLOADS_DIR / f"assets_{job_timestamp}.zip"
     make_numbered_zip(processed_clips + numbered_assets_for_zip, zip_file)
+
+    # Clean up intermediate raw job folder now that clips are bundled in zip and final video
+    try:
+        shutil.rmtree(job_dir, ignore_errors=True)
+    except Exception:
+        pass
 
     # SEO Kit
     notify(0.98, "🚀 Generating Dynamic YouTube Upload Kit & SEO...")
@@ -1607,8 +1714,8 @@ with tab1:
                 time.sleep(2.0)
                 st.rerun()
 
-    # Mobile Connection Auto-Recovery: Restore most recently generated video if session reset
-    if not st.session_state.get("merged_video"):
+    # Mobile Connection Auto-Recovery: Restore most recently generated video only if not cleared by user
+    if not st.session_state.get("user_cleared_video") and not st.session_state.get("merged_video"):
         recent_vids = sorted(DOWNLOADS_DIR.glob("merged_video_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
         if recent_vids and (time.time() - recent_vids[0].stat().st_mtime) < 86400:
             st.session_state.merged_video = str(recent_vids[0])
@@ -1651,7 +1758,7 @@ with tab1:
             </div>
             <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:8px 14px; margin-bottom:12px; font-size:0.82rem; color:#475569; display:flex; align-items:center; justify-content:space-between;">
                 <div>📁 <b>Saved File:</b> <code style="color:#2563EB;">{merged_path.name}</code> ({file_mb} MB)</div>
-                <div style="font-size:0.75rem; color:#10B981; font-weight:600;">✅ Permanently preserved in downloads folder</div>
+                <div style="font-size:0.75rem; color:#64748B; font-weight:600;">🗑️ Temporary file: Click "✨ New Video" to remove & free disk space</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1701,10 +1808,15 @@ with tab1:
                     except Exception as exp_err:
                         st.info(f"File path: {str(merged_path.resolve())}")
             with dl_col4:
-                if st.button("✨ New Video", use_container_width=True, help="Clear and create a fresh video"):
-                    for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
+                if st.button("✨ New Video", use_container_width=True, help="Purani video aur temporary files ko disk se direct remove karke fresh video start karein"):
+                    remove_old_video_files(delete_current=True)
+                    for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit", "custom_main_topic", "current_topic", "active_script_content", "csv_merged", "csv_zip", "director_custom_assets"]:
                         st.session_state.pop(k, None)
+                    st.session_state.pending_video_title = ""
+                    st.session_state["user_cleared_video"] = True
+                    st.toast("🗑️ Purani video aur temporary files remove kar di gayi!", icon="✨")
                     st.rerun()
+
 
             # 🧠 Self-Learning Feedback Loop & Quality Training Bar
             cur_brain = StudioBrain.get_stats()
@@ -1815,24 +1927,197 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
 
     # Main Studio Form Card
     with st.container(border=True, key="main_studio_card"):
-        # Script Input directly at top
+        # 1. Video Title / Main Topic (Prominent Anchor directly above Script)
+        if "pending_video_title" in st.session_state:
+            st.session_state["input_main_video_topic"] = st.session_state.pop("pending_video_title")
+
+        initial_title = st.session_state.get("input_main_video_topic") or st.session_state.get("custom_main_topic", "")
+
+
+        col_title_l, col_title_r = st.columns([4, 1])
+        with col_title_l:
+            st.markdown("""
+            <div style="margin-top: 2px; margin-bottom: 4px;">
+                <span style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">🏷️ Video Title / Main Topic <span style="font-size: 0.8rem; font-weight: 500; color: #64748B;">(Visual Anchor — all scenes anchor to this topic)</span></span>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_title_r:
+            with st.popover("ℹ️ Topic Anchor"):
+                st.markdown("""
+                **Why Title / Main Topic is important:**
+                - It serves as the visual anchor for every single scene.
+                - Prevents random unrelated clips (e.g. if topic is Ancient Pyramids, all clips stay on Pyramids).
+                - Enter any topic: *Ancient Pyramids, Shivaji Maharaj, Black Holes, AI, Taj Mahal*, etc.
+                """)
+
+        user_title_val = st.text_input(
+            "Video Title / Main Topic",
+            value=initial_title,
+            placeholder="Enter video title or topic (e.g. Ancient Pyramids, Shivaji Maharaj, Black Holes, AI, Taj Mahal...)",
+            label_visibility="collapsed",
+            key="input_main_video_topic"
+        )
+
+        # -------------------------------------------------------------
+        # 🪄 OPTION 1: 1-CLICK AI SCRIPT WRITER (Duration: 1, 3, 5, 10, 15, 20 min)
+        # -------------------------------------------------------------
+        with st.expander("🪄 1-Click AI Script Generator & Dual-Channel Multiplier (100% Free - No Key Needed)", expanded=False):
+            st.markdown("""
+            <div style="font-size:0.86rem; color:#475569; margin-bottom:12px;">
+                <b>Auto-generate complete, viral scripts matching your exact desired video duration!</b><br/>
+                Powered by free neural AI models — automatically creates hook, story acts, and climax scene-by-scene.
+            </div>
+            """, unsafe_allow_html=True)
+
+            ai_c1, ai_c2, ai_c3 = st.columns([2.5, 1.8, 1.7])
+            with ai_c1:
+                gen_topic = st.text_input(
+                    "Script Topic / Mystery Idea",
+                    value=user_title_val or "Ancient Pyramids Secret Chambers",
+                    key="input_ai_gen_topic"
+                )
+            with ai_c2:
+                duration_opt = st.selectbox(
+                    "⏱️ Video Duration",
+                    options=[
+                        "1 min (Short / Reel · ~12 scenes)",
+                        "3 min (Quick Story · ~35 scenes)",
+                        "5 min (YouTube Explainer · ~60 scenes)",
+                        "10 min (Documentary · ~120 scenes)",
+                        "15 min (Deep Investigation · ~170 scenes)",
+                        "20 min (Epic Feature Film · ~220 scenes)"
+                    ],
+                    index=0,
+                    key="select_ai_script_duration"
+                )
+            with ai_c3:
+                lang_opt = st.selectbox(
+                    "🗣️ Language",
+                    options=["Hindi", "English", "Hinglish", "Marathi"],
+                    index=0,
+                    key="select_ai_script_lang"
+                )
+
+            ai_t1, ai_t2 = st.columns([2.5, 1.5])
+            with ai_t1:
+                tone_opt = st.selectbox(
+                    "🎭 Story Tone & Niche",
+                    options=[
+                        "Cinematic Mystery & Suspense (Chilling & Dramatic)",
+                        "Ancient History & Lost Secrets (Epic Explorer)",
+                        "Cosmic Space & Science Thriller (Universe Wonders)",
+                        "Future Tech & AI Revolution (Mind-Blowing Facts)",
+                        "Dark Psychology & Stoic Mindset (High Retention)"
+                    ],
+                    index=0,
+                    key="select_ai_script_tone"
+                )
+            with ai_t2:
+                st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                btn_run_ai_script = st.button("✨ Write Script with AI", type="primary", use_container_width=True, key="btn_run_ai_script")
+
+            # Dual Channel Multiplier Section
+            st.markdown("<div style='margin-top:10px; padding-top:10px; border-top:1px dashed #CBD5E1;'></div>", unsafe_allow_html=True)
+            dc_col1, dc_col2 = st.columns([3, 2])
+            with dc_col1:
+                st.markdown("""
+                <span style="font-size:0.82rem; font-weight:700; color:#1E293B;">🌐 Dual-Channel Multiplier:</span>
+                <span style="font-size:0.78rem; color:#64748B;">Run 1 Hindi channel + 1 English channel with zero extra effort!</span>
+                """, unsafe_allow_html=True)
+            with dc_col2:
+                btn_translate_script = st.button("🔄 Translate Script (Hindi ⇋ English)", use_container_width=True, key="btn_translate_script_dc")
+
+            if btn_run_ai_script:
+                with st.spinner("🧠 Writing high-retention script with AI..."):
+                    d_mins = 1
+                    if "3 min" in duration_opt:
+                        d_mins = 3
+                    elif "5 min" in duration_opt:
+                        d_mins = 5
+                    elif "10 min" in duration_opt:
+                        d_mins = 10
+                    elif "15 min" in duration_opt:
+                        d_mins = 15
+                    elif "20 min" in duration_opt:
+                        d_mins = 20
+
+                    new_script = generate_ai_script(
+                        topic=gen_topic,
+                        duration_mins=d_mins,
+                        language=lang_opt,
+                        tone=tone_opt
+                    )
+                    if new_script:
+                        st.session_state.active_script_content = new_script
+                        st.session_state.custom_main_topic = gen_topic
+                        st.session_state.pending_video_title = gen_topic
+                        num_lines = len([l for l in new_script.splitlines() if l.strip()])
+                        st.toast(f"🎉 Generated {num_lines}-scene script for {duration_opt.split('(')[0].strip()}!", icon="✨")
+                        st.rerun()
+
+
+            if btn_translate_script:
+                curr_txt = st.session_state.get("active_script_content", "") or ""
+                if not curr_txt.strip():
+                    st.warning("Please enter or generate a script first to translate!")
+                else:
+                    with st.spinner("🌐 Translating script for second channel..."):
+                        has_devanagari = any('\u0900' <= ch <= '\u097F' for ch in curr_txt)
+                        target_lang = "English" if has_devanagari else "Hindi"
+                        translated = translate_script_free(curr_txt, target_lang=target_lang)
+                        if translated and translated.strip():
+                            st.session_state.active_script_content = translated
+                            st.toast(f"✅ Translated to {target_lang}! Ready for Dual Channel.", icon="🌐")
+                            st.rerun()
+
+        # 2. Script Input directly below Title
         initial_script = st.session_state.get("active_script_content", "")
 
-        col_tip_l, col_tip_r = st.columns([4, 1])
+
+        col_tip_l, col_tip_r = st.columns([3, 2])
         with col_tip_l:
             st.markdown("""
-            <div style="margin-top: 4px; margin-bottom: 4px;">
+            <div style="margin-top: 10px; margin-bottom: 4px;">
                 <span style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">✏️ Your script <span style="font-size: 0.8rem; font-weight: 500; color: #64748B;">(One line = one scene)</span></span>
             </div>
             """, unsafe_allow_html=True)
         with col_tip_r:
-            with st.popover("💡 Tips"):
-                st.markdown("""
-                **Scriptwriting Tips:**
-                - **1 Line = 1 Scene** (~3–5 seconds of video each).
-                - Write engaging sentences describing clear visual action.
-                - Avoid punctuation clutter or emojis for smoothest voice synthesis.
-                """)
+            sub_c1, sub_c2 = st.columns(2)
+            with sub_c1:
+                with st.popover("🔥 Viral Hooks"):
+                    topic_display = (user_title_val or "").strip() or "इस विषय"
+                    st.markdown(f"**⚡ 30-Sec Viral Hooks for `{topic_display}`:**")
+
+                    hk1 = f"अगर आपको लगता है कि आप {topic_display} की पूरी कहानी जानते हैं, तो रुकिए।\nक्योंकि हाल ही में वैज्ञानिकों ने एक ऐसा गुप्त दस्तावेज खोजा है, जो हमारे पूरे इतिहास को हिलाकर रख देगा।\nक्या सचमुच सदियों से हमसे एक बहुत बड़ा सच छुपाया गया था?"
+                    hk2 = f"साल 1932 में, {topic_display} के सबसे प्रतिबंधित हिस्से में एक गुप्त टीम भेजी गई थी।\nलेकिन वहां उन्हें जो मिला, उसे देखकर अधिकारियों ने उस पूरी फाइल को हमेशा के लिए सील कर दिया।\nआज के इस वीडियो में, हम उस सीलबंद फाइल के 3 सबसे चौंकाने वाले खुलासे करेंगे।"
+                    hk3 = f"What if everything you were taught about {topic_display} is a complete lie?\nModern experts admit that the official explanation is mathematically impossible.\nThe deeper you dig into this mystery, the more terrifying human history becomes."
+
+                    st.markdown("**1. 🕵️ The Forbidden File Hook:**")
+                    st.caption(hk2.splitlines()[0][:70] + "...")
+                    if st.button("➕ Insert Hook 1", key="btn_ins_hk1", use_container_width=True):
+                        st.session_state.active_script_content = (hk2 + "\n" + (initial_script or "")).strip()
+                        st.rerun()
+
+                    st.markdown("**2. ⚡ The Shocking Truth Hook:**")
+                    st.caption(hk1.splitlines()[0][:70] + "...")
+                    if st.button("➕ Insert Hook 2", key="btn_ins_hk2", use_container_width=True):
+                        st.session_state.active_script_content = (hk1 + "\n" + (initial_script or "")).strip()
+                        st.rerun()
+
+                    st.markdown("**3. 🎬 English Documentary Hook:**")
+                    st.caption(hk3.splitlines()[0][:70] + "...")
+                    if st.button("➕ Insert Hook 3", key="btn_ins_hk3", use_container_width=True):
+                        st.session_state.active_script_content = (hk3 + "\n" + (initial_script or "")).strip()
+                        st.rerun()
+
+            with sub_c2:
+                with st.popover("💡 Tips"):
+                    st.markdown("""
+                    **Scriptwriting Tips:**
+                    - **1 Line = 1 Scene** (~3–5 seconds of video each).
+                    - Write engaging sentences describing clear visual action.
+                    - Avoid punctuation clutter or emojis for smoothest voice synthesis.
+                    """)
 
         script_input = st.text_area(
             "Your Script",
@@ -1846,20 +2131,25 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         line_count = len([line.strip() for line in curr_script_preview.split('\n') if line.strip()])
         char_count = len(curr_script_preview)
 
-        # Auto-extract or keep main topic
-        main_topic_input = st.session_state.get("custom_main_topic", "")
+        # Determine effective main topic: User-entered title takes 100% precedence
+        main_topic_input = (user_title_val or "").strip()
+        if not main_topic_input:
+            main_topic_input = st.session_state.get("custom_main_topic", "")
         if not main_topic_input and script_input.strip():
             first_lines = [l.strip() for l in script_input.split('\n') if l.strip()]
             if first_lines:
                 main_topic_input = re.sub(r'^[0-9\.\-\:\#\*\s]+', '', first_lines[0])[:60].strip()
         if not main_topic_input:
-            main_topic_input = st.session_state.get("current_topic", "YouTube_Video")
+            main_topic_input = "YouTube_Video"
+
+        st.session_state.custom_main_topic = main_topic_input
+        st.session_state.current_topic = main_topic_input
 
         col_inf_l, col_inf_r = st.columns([3, 1.5])
         with col_inf_l:
             st.markdown(f"""
             <div style="margin-top: 4px; margin-bottom: 10px;">
-                <span style="font-size: 0.78rem; font-weight: 600; color: #64748B;">{line_count} lines • {char_count} characters</span>
+                <span style="font-size: 0.78rem; font-weight: 600; color: #64748B;">{line_count} lines • {char_count} characters • Visual Anchor: <b style="color:#4F46E5;">{main_topic_input}</b></span>
             </div>
             """, unsafe_allow_html=True)
         with col_inf_r:
@@ -1868,7 +2158,11 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 for ex_name, ex_script in list(SAMPLE_PRESETS.items())[:3]:
                     if st.button(f"Load: {ex_name}", key=f"btn_load_ex_{slugify(ex_name)}", use_container_width=True):
                         st.session_state.active_script_content = ex_script
+                        st.session_state.custom_main_topic = ex_name
+                        st.session_state.current_topic = ex_name
+                        st.session_state.pending_video_title = ex_name
                         st.rerun()
+
 
         # Row 2: Voice narrator, Video ratio, Footage mix
         col_c1, col_c2, col_c3 = st.columns(3)
@@ -1943,24 +2237,94 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         with col_c3:
             global_media_pref = st.selectbox(
                 "🎞️ Footage mix",
-                ["invideo_mix", "both", "video", "image"],
+                ["ai_flux", "hybrid_ai", "invideo_mix", "both", "video", "image"],
                 format_func=lambda x: {
+                    "ai_flux": "🎨 100% Custom AI Visuals (FLUX 8K Exact Match - Free)",
+                    "hybrid_ai": "⚡ Smart Hybrid (50% Stock Video + 50% FLUX AI)",
                     "invideo_mix": "🎯 Smart 60% Video / 40% Photo",
                     "both": "🎬 Best Available 1080p",
                     "video": "🎥 100% Videos Only",
                     "image": "📸 100% Photos Only"
-                }.get(x, x)
+                }.get(x, x),
+                index=0
             )
 
-        # Row 4: Feature Badges
-        st.markdown("""
-        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 20px 0;">
-            <div class="feat-pill"><span class="feat-tag-hd">HD</span> 1080p output</div>
-            <div class="feat-pill"><span>🖼️</span> Auto scene matching</div>
-            <div class="feat-pill"><span>〰️</span> Voice sync</div>
-            <div class="feat-pill"><span>🛡️</span> Royalty-free media</div>
-        </div>
-        """, unsafe_allow_html=True)
+        # -------------------------------------------------------------
+        # 🎬 OPTION 2: DIRECTOR SCENE TIMELINE & RE-ROLL VISUALS
+        # -------------------------------------------------------------
+        with st.expander("🎬 Director Scene Timeline & Re-roll Visuals (Optional Preview & Customization)", expanded=False):
+            st.markdown("""
+            <div style="font-size:0.86rem; color:#475569; margin-bottom:12px;">
+                <b>Director Mode:</b> Review scenes before rendering. You can re-roll individual scene visuals or customize keywords on the fly!
+            </div>
+            """, unsafe_allow_html=True)
+
+            raw_script_for_preview = (script_input or "").strip()
+            if not raw_script_for_preview:
+                st.info("💡 Write or auto-generate a script above to preview the scene timeline here.")
+            else:
+                parsed_for_timeline = parse_script_to_scenes(
+                    raw_script_for_preview,
+                    main_topic=main_topic_input,
+                    default_media=global_media_pref
+                )
+
+                if "director_custom_assets" not in st.session_state:
+                    st.session_state.director_custom_assets = {}
+
+                st.caption(f"Showing {len(parsed_for_timeline)} scenes parsed from script. Click '🎲 Re-roll Visual' on any scene to generate a fresh FLUX 8K visual.")
+
+                preview_limit = min(15, len(parsed_for_timeline))
+                for sc_idx, sc_item in enumerate(parsed_for_timeline[:preview_limit]):
+                    sc_no = sc_item.get("no", str(sc_idx+1).zfill(2))
+                    col_sc1, col_sc2, col_sc3 = st.columns([1, 4, 2])
+                    with col_sc1:
+                        st.markdown(f"<div style='font-weight:800; color:#4F46E5; font-size:1.05rem; padding-top:6px;'>#{sc_no}</div>", unsafe_allow_html=True)
+                        st.caption(f"{sc_item.get('duration', 4.0)}s · {sc_item.get('type', 'hybrid')}")
+                    with col_sc2:
+                        st.markdown(f"**Line:** {sc_item.get('text', '')}")
+                        st.caption(f"🔍 Visual Anchor: `{sc_item.get('keyword', '')}`")
+                    with col_sc3:
+                        custom_asset = st.session_state.director_custom_assets.get(sc_no)
+                        if custom_asset and Path(custom_asset).exists():
+                            st.image(str(custom_asset), caption=f"Re-rolled #{sc_no}", use_container_width=True)
+
+                        btn_reroll = st.button(f"🎲 Re-roll #{sc_no}", key=f"btn_reroll_{sc_no}", use_container_width=True)
+                        if btn_reroll:
+                            with st.spinner(f"Rendering fresh 8K visual for Scene #{sc_no}..."):
+                                reroll_dest = DOWNLOADS_DIR / f"director_reroll_{sc_no}_{int(time.time())}.jpg"
+                                flux_prompt = sc_item.get("dalle_prompt") or f"{sc_item.get('keyword', main_topic_input)}, cinematic 8k masterpiece"
+                                img_res = generate_ai_image(flux_prompt, dest_path=reroll_dest)
+                                if img_res and reroll_dest.exists() and reroll_dest.stat().st_size > 0:
+                                    st.session_state.director_custom_assets[sc_no] = str(reroll_dest)
+                                    st.toast(f"🎨 Scene #{sc_no} visual re-rolled successfully!", icon="🎲")
+                                    st.rerun()
+                                else:
+                                    st.warning(f"Could not generate visual for #{sc_no}")
+
+                if len(parsed_for_timeline) > preview_limit:
+                    st.caption(f"... and {len(parsed_for_timeline) - preview_limit} more scenes will be automatically rendered in full video.")
+
+        # Row 4: Feature Badges & Audio Quick Controls
+        col_fb1, col_fb2 = st.columns([3.5, 1.5])
+        with col_fb1:
+            st.markdown("""
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 20px 0;">
+                <div class="feat-pill"><span class="feat-tag-hd">HD</span> 1080p output</div>
+                <div class="feat-pill"><span>🖼️</span> Auto scene matching</div>
+                <div class="feat-pill"><span>〰️</span> Voice sync</div>
+                <div class="feat-pill"><span>🛡️</span> Royalty-free media</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_fb2:
+            with st.popover("🎚️ Audio Mix (BGM & SFX)"):
+                st.markdown("**🔊 Studio Audio Controls:**")
+                st.caption(f"🎵 BGM Volume: `{bgm_volume:.2f}`")
+                st.caption(f"⚡ SFX Whoosh/Boom: `{sfx_volume:.2f}`")
+                st.markdown("""
+                *Adjust volume sliders in the left sidebar for fine-tuned decibel balance between voiceover, music, and cinematic transition whooshes.*
+                """)
+
 
         # Row 5: Action Buttons
         col_act1, col_act2 = st.columns([3.5, 1.5])
@@ -1995,6 +2359,12 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
         elif BackgroundRenderManager.is_running():
             st.warning("⚠️ A video generation job is already running in the background. Please wait or cancel it first.")
         else:
+            st.session_state["user_cleared_video"] = False
+            # Clean up old video files and job directories from disk before starting new video
+            remove_old_video_files(delete_current=True)
+            for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit"]:
+                st.session_state.pop(k, None)
+
             # Prevent mobile phone screen from sleeping if browser kept active
             st.components.v1.html(
                 """<script>
@@ -2014,6 +2384,19 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                     custom_bgm_path = str(c_bgm_dest)
                 except Exception as bgm_e:
                     print(f"Error saving custom BGM: {bgm_e}")
+
+            # Pass any custom director re-rolled visual assets
+            existing_custom_assets = {}
+            if st.session_state.get("director_custom_assets"):
+                for sc_no_k, a_path in st.session_state["director_custom_assets"].items():
+                    if a_path and Path(a_path).exists():
+                        existing_custom_assets[sc_no_k] = {
+                            "type": "image",
+                            "download": a_path,
+                            "preview": a_path,
+                            "user": "Director_AI_FLUX",
+                            "id": f"director_custom_{sc_no_k}"
+                        }
 
             job_params = {
                 "script_text": script_input,
@@ -2039,11 +2422,14 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 "bgm_k": selected_bgm_key,
                 "custom_bgm": custom_bgm_path,
                 "bgm_vol": bgm_volume,
+                "sfx_vol": sfx_volume,
                 "niche_k": active_niche_k,
+                "existing_selected_assets": existing_custom_assets if existing_custom_assets else None,
             }
             st.session_state.active_script_content = script_input
             st.session_state.custom_main_topic = main_topic_input
             ok, j_id = BackgroundRenderManager.start_job(job_params, run_full_auto_video_pipeline)
+
             if ok:
                 st.toast("🚀 Video render started in background!", icon="⚡")
                 st.rerun()
@@ -2068,7 +2454,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            col_bot_dl1, col_bot_dl2, col_bot_dl3 = st.columns([2, 1.5, 1.5])
+            col_bot_dl1, col_bot_dl2, col_bot_dl3, col_bot_dl4 = st.columns([2, 1.5, 1.2, 1.3])
             with col_bot_dl1:
                 def _stream_bot_video():
                     return open(bot_video_path, "rb")
@@ -2102,6 +2488,16 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                         subprocess.Popen(f'explorer.exe /select,"{str(bot_video_path.resolve())}"')
                     except Exception as b_err:
                         st.info(f"File path: {str(bot_video_path.resolve())}")
+            with col_bot_dl4:
+                if st.button("✨ New Video", key="btn_bottom_new_video", use_container_width=True, help="Purani video aur files ko disk se remove karke fresh video start karein"):
+                    remove_old_video_files(delete_current=True)
+                    for k in ["merged_video", "assets_zip", "parsed_scenes", "scene_assets", "selected_assets", "youtube_seo_kit", "custom_main_topic", "current_topic", "active_script_content", "csv_merged", "csv_zip", "director_custom_assets"]:
+                        st.session_state.pop(k, None)
+                    st.session_state.pending_video_title = ""
+                    st.session_state["user_cleared_video"] = True
+                    st.toast("🗑️ Purani video aur temporary files remove kar di gayi!", icon="✨")
+                    st.rerun()
+
 
 # =====================================================================
 # TAB 2: CSV BATCH ASSET FINDER

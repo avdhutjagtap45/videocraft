@@ -505,7 +505,8 @@ def process_scene_clip(
     ken_burns_style: str = "auto",
     scene_index: int = 0,
     cinematic_grade: bool = True,
-    whoosh_sfx: bool = True
+    whoosh_sfx: bool = True,
+    sfx_vol: float = 0.35
 ) -> bool:
     """
     Master Human Pro Video Processor:
@@ -572,9 +573,11 @@ def process_scene_clip(
         base_video_filter = scale_filter
         cmd += ["-stream_loop", "-1", "-ss", "0", "-t", str(duration), "-i", str(media_path)]
 
-    # Pro Documentary Color Grade & Vignette (rich contrast & cinematic edge depth)
+    # Hollywood Cinematic Color Grading & 4K Sharpness Pop:
+    # 1. Subtle Teal & Orange split-tone + contrast pop + vignette
+    # 2. Studio unsharp mask (sharpens fine architectural & face details so 1080p looks like 4K)
     if cinematic_grade:
-        base_video_filter += ",vignette=PI/4,eq=contrast=1.06:saturation=1.10"
+        base_video_filter += ",eq=contrast=1.08:saturation=1.12,colorbalance=rs=0.04:bs=0.06:rm=0.06:bm=-0.03,vignette=PI/4.5,unsharp=5:5:0.6:5:5:0.0"
 
     input_count = 1
     overlay_input_idx = None
@@ -588,16 +591,16 @@ def process_scene_clip(
     has_custom_audio = bool(audio_path and Path(audio_path).exists() and Path(audio_path).stat().st_size > 0)
 
     active_sfx = None
-    sfx_vol = 0.28
-    if whoosh_sfx:
+    cur_sfx_vol = sfx_vol
+    if whoosh_sfx and sfx_vol > 0.01:
         if scene_index == 0 and boom_path.exists():
             # Scene 1 Opening Hook Impact: Sub-bass trailer punch for instant viewer retention
             active_sfx = boom_path
-            sfx_vol = 0.40
+            cur_sfx_vol = min(1.0, sfx_vol * 1.35)
         elif scene_index > 0 and whoosh_path.exists():
             # Scene Transitions: Crisp cinematic whoosh swish on cuts
             active_sfx = whoosh_path
-            sfx_vol = 0.28
+            cur_sfx_vol = sfx_vol
 
     if active_sfx:
         cmd += ["-i", str(active_sfx)]
@@ -609,13 +612,13 @@ def process_scene_clip(
             audio_input_idx = input_count
             input_count += 1
             audio_filter = (
-                f"[{sfx_input_idx}:a]volume={sfx_vol},apad=whole_dur={duration}[sfx_a];"
+                f"[{sfx_input_idx}:a]volume={cur_sfx_vol},apad=whole_dur={duration}[sfx_a];"
                 f"[{audio_input_idx}:a]volume=1.28,apad=whole_dur={duration}[v_a];"
                 f"[v_a][sfx_a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,aformat=channel_layouts=stereo:sample_rates=44100[a]"
             )
         else:
             audio_filter = (
-                f"[{sfx_input_idx}:a]volume={sfx_vol},apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
+                f"[{sfx_input_idx}:a]volume={cur_sfx_vol},apad=whole_dur={duration},aformat=channel_layouts=stereo:sample_rates=44100[a]"
             )
     else:
         if has_custom_audio:

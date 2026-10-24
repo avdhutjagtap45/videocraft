@@ -134,95 +134,188 @@ THEMATIC_SCENARIOS = [
     }
 ]
 
-def extract_scenario_search(sentence: str) -> dict:
+HINDI_CONCEPT_MAP = {
+    # Architecture & Monuments
+    "इमारत": "monument architecture structure",
+    "महल": "royal palace architecture",
+    "किला": "ancient fortress castle",
+    "मकबरा": "mausoleum tomb monument",
+    "कब्र": "historic tomb monument",
+    "मंदिर": "ancient temple architecture",
+    "गुंबद": "architectural dome",
+    "मीनार": "minaret tower landmark",
+    "संगमरमर": "carved marble stone",
+    "पत्थर": "carved stone sculpture",
+    "नक्काशी": "intricate carving craftsmanship",
+    "वास्तुकला": "ancient architecture design",
+    "दरवाजा": "grand gateway entrance",
+    "कमरा": "interior chamber room",
+    "तहखाना": "underground secret chamber",
+    "स्तंभ": "ancient pillar column",
+    "खंभा": "ancient stone pillar",
+    # History, Royalty & Figures
+    "राजा": "ancient king royal monarch",
+    "रानी": "queen royal empress",
+    "बादशाह": "emperor ruler monarch",
+    "योद्धा": "ancient warrior fighter",
+    "सैनिक": "soldiers military army",
+    "सेना": "army military soldiers",
+    "युद्ध": "ancient battle warfare",
+    "तलवार": "sword weapon warrior",
+    "कारीगर": "artisan craftsman sculpture",
+    "मजदूर": "construction workers builders",
+    "इतिहास": "ancient history documentary",
+    "प्राचीन": "ancient historical heritage",
+    "सभ्यता": "ancient civilization history",
+    # Nature, Cosmos & Environment
+    "नदी": "river water landscape",
+    "बगीचा": "lush garden flowers courtyard",
+    "पानी": "water reflection fountain",
+    "समुद्र": "ocean sea waves landscape",
+    "पहाड़": "majestic mountains landscape",
+    "जंगल": "dense forest nature trees",
+    "रेगिस्तान": "desert sand dunes landscape",
+    "आकाश": "dramatic sky clouds",
+    "सूरज": "golden sun sunset sunrise",
+    "चांद": "moon night stars",
+    "अंतरिक्ष": "outer space galaxy stars",
+    "ग्रह": "planet universe cosmos",
+    # Mystery, Science & Exploration
+    "रहस्य": "mysterious dramatic secrets",
+    "खजाना": "ancient gold treasure wealth",
+    "सच्चाई": "mystery reveal truth documentary",
+    "खोज": "exploration archaeological discovery",
+    "विज्ञान": "science futuristic technology",
+    "तकनीक": "technology innovation digital",
+}
+
+TOPIC_ASPECT_ROTATION = [
+    "cinematic wide angle",
+    "detailed close up",
+    "aerial drone perspective",
+    "dramatic cinematic lighting",
+    "sunset golden hour",
+    "atmospheric 4k documentary",
+    "panoramic landscape view",
+    "intricate textural details",
+    "night moonlit atmosphere",
+    "epic visual composition"
+]
+
+def extract_scenario_search(sentence: str, topic: str = "", scene_idx: int = 1) -> dict:
     """
     Extracts scenario-wise visual context, stock search queries,
-    and AI generation prompts instead of crude word-by-word matching.
+    and AI generation prompts strictly anchored to the main video topic.
+    Guarantees that 100% of scenes in a long video remain visually on-topic.
     """
     if not sentence or not sentence.strip():
+        base = topic.strip() if topic else "cinematic documentary"
         return {
-            "scenario": "Cinematic scenic landscape",
-            "keyword": "cinematic landscape",
-            "dalle_prompt": "Cinematic high-definition scenic landscape, 8k resolution"
+            "scenario": f"{base.title()} cinematic scene",
+            "keyword": f"{base} cinematic",
+            "dalle_prompt": f"Cinematic 8k high-definition view of {base}"
         }
 
     clean_text = sentence.lower()
-    clean_words = [w for w in re.sub(r'https?://\S+|[^\w\s]', ' ', clean_text).split() if len(w) > 2 and w not in STOPWORDS]
+    clean_topic = topic.strip() if topic else ""
 
-    # Detect primary setting theme
+    # 1. Check Hindi concept mappings (longer specific terms take precedence)
+    matched_sub_concepts = []
+    for h_word, eng_term in sorted(HINDI_CONCEPT_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+        if h_word in clean_text:
+            matched_sub_concepts.append(eng_term)
+
+    # 2. Check English content words
+    eng_tokens = [w for w in re.findall(r'[a-zA-Z]{3,}', clean_text) if w not in STOPWORDS]
+
+    # Detect thematic setting
     detected_theme = None
-    matched_triggers = []
     for entry in THEMATIC_SCENARIOS:
-        hits = [t for t in entry["triggers"] if t in clean_text]
-        if hits:
+        if any(t in clean_text for t in entry["triggers"]):
             detected_theme = entry
-            matched_triggers = hits
             break
 
-    if detected_theme:
-        anchor = detected_theme["triggers"][0]  # e.g., 'egypt', 'futuristic', 'ocean', 'mountain', 'space'
-        # Distinct subject terms from this specific sentence
-        sentence_subjects = [t for t in matched_triggers if t != anchor]
-        extra_nouns = [w for w in clean_words if w not in sentence_subjects and w != anchor and len(w) > 3][:2]
-        
-        # Compose 3-4 word scenario-focused query
-        tokens = [anchor] + sentence_subjects + extra_nouns
-        unique_tokens = []
-        for t in tokens:
-            if t not in unique_tokens:
-                unique_tokens.append(t)
-
-        scenario_kw = " ".join(unique_tokens[:4])
-        return {
-            "scenario": f"{detected_theme['scenario']} ({sentence[:65]}...)",
-            "keyword": scenario_kw,
-            "dalle_prompt": f"{detected_theme['dalle']}, depicting: {sentence.strip()}"
-        }
-
-    # Generic scenario from content words
-    if clean_words:
-        scenario_kw = " ".join(clean_words[:4])
+    # Build final scenario keyword strictly anchored to topic
+    if clean_topic:
+        t_lower = clean_topic.lower()
+        if matched_sub_concepts:
+            sub_words = matched_sub_concepts[0].split()
+            filtered_sub = [w for w in sub_words if w not in t_lower][:2]
+            sub_str = " ".join(filtered_sub) if filtered_sub else sub_words[0]
+            scenario_kw = f"{clean_topic} {sub_str}".strip()
+        elif eng_tokens:
+            filtered_eng = [w for w in eng_tokens if w not in t_lower][:2]
+            if filtered_eng:
+                scenario_kw = f"{clean_topic} {' '.join(filtered_eng)}"
+            else:
+                aspect = TOPIC_ASPECT_ROTATION[(scene_idx - 1) % len(TOPIC_ASPECT_ROTATION)]
+                scenario_kw = f"{clean_topic} {aspect}"
+        elif detected_theme:
+            scenario_kw = f"{clean_topic} {detected_theme['triggers'][0]}"
+        else:
+            aspect = TOPIC_ASPECT_ROTATION[(scene_idx - 1) % len(TOPIC_ASPECT_ROTATION)]
+            scenario_kw = f"{clean_topic} {aspect}"
     else:
-        scenario_kw = "cinematic nature landscape"
+        if detected_theme:
+            scenario_kw = f"{detected_theme['keyword']} {' '.join(eng_tokens[:2])}".strip()
+        elif eng_tokens:
+            scenario_kw = " ".join(eng_tokens[:3])
+        elif matched_sub_concepts:
+            scenario_kw = matched_sub_concepts[0]
+        else:
+            scenario_kw = "cinematic documentary landmark"
+
+    subject_ref = f"{clean_topic}: {sentence.strip()[:100]}" if clean_topic else sentence.strip()[:100]
+    dalle_p = f"Cinematic 8k movie still of {subject_ref}, photorealistic masterpiece, 35mm photography, volumetric lighting, epic dramatic atmosphere, Unreal Engine 5 render style, highly detailed"
 
     return {
-        "scenario": f"Cinematic scenario: {sentence.strip()[:65]}...",
+        "scenario": f"Scene {scene_idx}: {clean_topic.title() if clean_topic else 'Visual'} ({sentence.strip()[:60]}...)",
         "keyword": scenario_kw,
-        "dalle_prompt": f"Cinematic photorealistic view of {sentence.strip()}, 8k commercial stock photography"
+        "dalle_prompt": dalle_p
     }
 
-def extract_keywords(sentence: str, max_words: int = 3) -> str:
+def extract_keywords(sentence: str, max_words: int = 3, topic: str = "") -> str:
     """Legacy helper maintained for backward compatibility; calls scenario extractor."""
-    return extract_scenario_search(sentence)["keyword"]
+    return extract_scenario_search(sentence, topic=topic)["keyword"]
 
-def generate_fallback_keywords(sentence: str, primary_kw: str) -> list[str]:
+def generate_fallback_keywords(sentence: str, primary_kw: str, topic: str = "") -> list[str]:
     """
     Generates intelligent alternative scenario queries when primary search yields no clips.
+    Strictly preserves the video's core visual subject topic instead of jumping to unrelated nature.
     """
     fallbacks = []
-    clean = re.sub(r'https?://\S+|[^\w\s]', ' ', sentence.lower())
-    sentence_words = [w for w in clean.split() if w not in STOPWORDS and len(w) > 2 and not w.isdigit()]
-    primary_tokens = set(primary_kw.lower().split())
+    clean_topic = topic.strip() if topic else ""
 
-    # 1. Break multi-word primary into individual strongest words
-    for token in primary_tokens:
-        if len(token) > 3 and token not in fallbacks:
-            fallbacks.append(token)
+    if clean_topic:
+        t_low = clean_topic.lower()
+        for aspect in TOPIC_ASPECT_ROTATION:
+            fb = f"{clean_topic} {aspect}"
+            if fb.lower() != primary_kw.lower() and fb not in fallbacks:
+                fallbacks.append(fb)
+        fallbacks.append(f"{clean_topic} architecture")
+        fallbacks.append(f"{clean_topic} aerial")
+        fallbacks.append(f"{clean_topic} cinematic 4k")
+    else:
+        clean = re.sub(r'https?://\S+|[^\w\s]', ' ', sentence.lower())
+        sentence_words = [w for w in clean.split() if w not in STOPWORDS and len(w) > 2 and not w.isdigit()]
+        primary_tokens = set(primary_kw.lower().split())
 
-    # 2. Alternative scenario pairs from remaining words
-    remaining = [w for w in sentence_words if w not in primary_tokens]
-    if len(remaining) >= 2:
-        for i in range(len(remaining) - 1):
-            pair = f"{remaining[i]} {remaining[i+1]}"
-            if pair not in fallbacks:
-                fallbacks.append(pair)
-    for w in remaining:
-        if len(w) > 3 and w not in fallbacks:
-            fallbacks.append(w)
+        for token in primary_tokens:
+            if len(token) > 3 and token not in fallbacks:
+                fallbacks.append(token)
 
-    # 3. Universal high-aesthetic fallbacks
-    fallbacks.append("cinematic landscape")
-    fallbacks.append("nature background")
+        remaining = [w for w in sentence_words if w not in primary_tokens]
+        if len(remaining) >= 2:
+            for i in range(len(remaining) - 1):
+                pair = f"{remaining[i]} {remaining[i+1]}"
+                if pair not in fallbacks:
+                    fallbacks.append(pair)
+        for w in remaining:
+            if len(w) > 3 and w not in fallbacks:
+                fallbacks.append(w)
+
+        fallbacks.append("cinematic documentary")
+        fallbacks.append("historical heritage monument")
 
     return fallbacks
 
@@ -274,26 +367,28 @@ def parse_script_to_scenes(
 ) -> list[dict]:
     """
     Splits script text into numbered scenes with:
-    1. Scenario-wise search query and DALL-E prompt
-    2. Dynamic content-dependent scene duration (InVideo AI style with speed scaling)
-    3. Balanced media distribution (~60% video, ~40% photo)
-    4. TOPIC-ANCHORED HOOK: Scene 1 strictly showcases the main video topic hero footage!
+    1. Universal punctuation support (Hindi Danda '।', '॥', Urdu '۔', English '.!?')
+    2. 100% TOPIC-ANCHORED SEARCH: Every single scene query is anchored to the main topic!
+    3. Scenario-wise search query and DALL-E prompt
+    4. Dynamic content-dependent scene duration (InVideo AI style with speed scaling)
+    5. Balanced media distribution (~60% video, ~40% photo)
     """
     if not script_text or not script_text.strip():
         return []
 
+    SENTENCE_SPLIT_REGEX = r'(?<=[.!?।॥۔\n])\s+'
     raw_lines = [line.strip() for line in script_text.splitlines() if line.strip()]
     raw_chunks = []
     
     for line in raw_lines:
-        sentences = re.split(r'(?<=[.!?])\s+', line)
+        sentences = re.split(SENTENCE_SPLIT_REGEX, line)
         for s in sentences:
             s_clean = s.strip()
             if len(s_clean) > 3:
                 raw_chunks.append(s_clean)
 
     if not raw_chunks:
-        sentences = re.split(r'(?<=[.!?])\s+', script_text.strip())
+        sentences = re.split(SENTENCE_SPLIT_REGEX, script_text.strip())
         raw_chunks = [s.strip() for s in sentences if len(s.strip()) > 3]
 
     detected_topic = detect_script_main_topic(script_text, custom_topic=main_topic)
@@ -301,7 +396,11 @@ def parse_script_to_scenes(
     scenes = []
     for idx, text in enumerate(raw_chunks, start=1):
         # 60% video / 40% image mix pattern (Opening hook is ALWAYS video for maximum visual impact!)
-        if idx == 1:
+        if default_media == "ai_flux":
+            assigned_media = "ai_flux"
+        elif default_media == "hybrid_ai":
+            assigned_media = "video" if idx % 2 == 1 else "ai_flux"
+        elif idx == 1:
             assigned_media = "video" if default_media in ["video", "invideo_mix", "both"] else default_media
         elif default_media in ["video", "image"]:
             assigned_media = default_media
@@ -311,7 +410,7 @@ def parse_script_to_scenes(
             assigned_media = MEDIA_MIX_RATIO[(idx - 1) % len(MEDIA_MIX_RATIO)]
 
         # Dynamic duration: speech-paced with speed scaling (1.25x Creator speed)
-        is_img = (assigned_media == "image")
+        is_img = (assigned_media in ["image", "ai_flux"])
         dynamic_dur = calculate_content_duration(text, is_image=is_img, speed=speed)
 
         # SCENE 1 IS THE OPENING HOOK:
@@ -319,7 +418,7 @@ def parse_script_to_scenes(
         if idx == 1:
             hook_kw = f"{detected_topic} cinematic dramatic reveal"
             hook_scenario = f"🔥 Opening Hook Hero Visual: {detected_topic.title()}"
-            hook_prompt = f"Breathtaking cinematic wide-angle opening hero visual of {detected_topic}, epic dramatic lighting, 8k National Geographic documentary style"
+            hook_prompt = f"Breathtaking cinematic wide-angle opening hero movie still of {detected_topic}, epic dramatic lighting, volumetric atmosphere, 8k National Geographic documentary style, photorealistic masterpiece"
             scenes.append({
                 "no": str(idx).zfill(2),
                 "text": text,
@@ -332,17 +431,14 @@ def parse_script_to_scenes(
                 "content_duration": dynamic_dur,
                 "custom_search": hook_kw,
                 "is_hook": True,
-                "hook_topic": detected_topic
+                "hook_topic": detected_topic,
+                "main_topic": detected_topic
             })
             continue
 
-        # Scenario extraction for subsequent scenes
-        scenario_data = extract_scenario_search(text)
-        
-        # If subsequent scene had very weak keywords (generic landscape), blend in topic context
+        # Scenario extraction for all subsequent scenes (ALWAYS topic anchored!)
+        scenario_data = extract_scenario_search(text, topic=detected_topic, scene_idx=idx)
         sc_kw = scenario_data["keyword"]
-        if sc_kw in ["cinematic nature landscape", "nature landscape", "cinematic landscape"]:
-            sc_kw = f"{detected_topic} {sc_kw}"
 
         scenes.append({
             "no": str(idx).zfill(2),
@@ -356,7 +452,8 @@ def parse_script_to_scenes(
             "content_duration": dynamic_dur,
             "custom_search": sc_kw,
             "is_hook": False,
-            "hook_topic": detected_topic
+            "hook_topic": detected_topic,
+            "main_topic": detected_topic
         })
 
     return scenes
