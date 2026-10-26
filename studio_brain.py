@@ -185,6 +185,10 @@ class StudioBrain:
             if cand.get("type") == "video":
                 score += 15
 
+            # Authentic topic source bonus (Wikimedia historical archives or FLUX 8K photorealism)
+            if cand.get("is_ai_generated") or "Wikimedia" in cand.get("source", ""):
+                score += 45
+
             # Historical learning bonus
             if c_id in learned:
                 learned_entry = learned[c_id]
@@ -196,7 +200,9 @@ class StudioBrain:
             cand_text = f"{tags} {m_kw}"
             hits = sum(1 for tw in topic_words if tw in cand_text)
             if hits > 0:
-                score += min(180, hits * 60)  # +60 to +180 topic match bonus!
+                score += min(220, hits * 80)  # +80 to +220 massive topic match bonus!
+            elif len(topic_words) >= 2 and not cand.get("is_ai_generated") and "Wikimedia" not in cand.get("source", ""):
+                score -= 60  # Penalize generic clips that have zero topic overlap!
 
             # Scene 1 Hook bonus (motion and hero clips)
             if is_scene_1_hook and cand.get("type") == "video":

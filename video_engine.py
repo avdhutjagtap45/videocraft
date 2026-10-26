@@ -98,7 +98,7 @@ def _ensure_sfx_assets() -> Tuple[Path, Path]:
 _ensure_sfx_assets()
 
 
-def download_file(url: str, dest_path: Path, timeout: int = 150) -> bool:
+def download_file(url: str, dest_path: Path, timeout: int = 25) -> bool:
     """Download a remote media file with streaming or copy local media file (supports large 1GB+ files)."""
     if not url:
         return False
@@ -113,9 +113,10 @@ def download_file(url: str, dest_path: Path, timeout: int = 150) -> bool:
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://pixabay.com/",
             "Accept": "*/*"
         }
+        if "pixabay.com" in str(url):
+            headers["Referer"] = "https://pixabay.com/"
         dest_path.parent.mkdir(parents=True, exist_ok=True)
 
         for attempt in range(2):
@@ -573,11 +574,9 @@ def process_scene_clip(
         base_video_filter = scale_filter
         cmd += ["-stream_loop", "-1", "-ss", "0", "-t", str(duration), "-i", str(media_path)]
 
-    # Hollywood Cinematic Color Grading & 4K Sharpness Pop:
-    # 1. Subtle Teal & Orange split-tone + contrast pop + vignette
-    # 2. Studio unsharp mask (sharpens fine architectural & face details so 1080p looks like 4K)
+    # High-Performance Cinematic Color Grading (Single-pass fast contrast & saturation)
     if cinematic_grade:
-        base_video_filter += ",eq=contrast=1.08:saturation=1.12,colorbalance=rs=0.04:bs=0.06:rm=0.06:bm=-0.03,vignette=PI/4.5,unsharp=5:5:0.6:5:5:0.0"
+        base_video_filter += ",eq=contrast=1.08:saturation=1.12"
 
     input_count = 1
     overlay_input_idx = None
@@ -638,18 +637,18 @@ def process_scene_clip(
         filter_complex = f"[0:v]{base_video_filter}[v];{audio_filter}"
 
     cmd += [
-        "-threads", "2",
+        "-threads", "0",
         "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", "[a]",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "24",
-        "-maxrate", "3500k",
-        "-bufsize", "7000k",
+        "-preset", "ultrafast",
+        "-crf", "22",
+        "-maxrate", "6000k",
+        "-bufsize", "12000k",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
-        "-b:a", "128k",
+        "-b:a", "192k",
         "-t", str(duration),
         "-movflags", "+faststart",
         str(output_path)
@@ -687,7 +686,7 @@ def process_scene_clip(
 
                 v_filter = f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},setsar=1,fps=30"
                 if cinematic_grade:
-                    v_filter += ",vignette=PI/4,eq=contrast=1.06:saturation=1.10"
+                    v_filter += ",eq=contrast=1.08:saturation=1.12"
                 v_filter += "[bg]"
                 if fb_overlay_idx is not None:
                     fb_complex = f"{v_filter};[bg][{fb_overlay_idx}:v]overlay=0:0[v];{fb_a_filter}"
@@ -695,12 +694,12 @@ def process_scene_clip(
                     fb_complex = f"{v_filter.replace('[bg]', '[v]')};{fb_a_filter}"
 
                 cmd_fallback += [
-                    "-threads", "2",
+                    "-threads", "0",
                     "-filter_complex", fb_complex,
                     "-map", "[v]",
                     "-map", "[a]",
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "3500k", "-bufsize", "7000k", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "128k", "-t", str(duration), "-movflags", "+faststart",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-maxrate", "6000k", "-bufsize", "12000k", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k", "-t", str(duration), "-movflags", "+faststart",
                     str(output_path)
                 ]
                 res_fb = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=100)
@@ -779,6 +778,8 @@ def add_background_music_to_video(
 
     cmd = [
         ffmpeg, "-y",
+        "-fflags", "+genpts",
+        "-avoid_negative_ts", "make_zero",
         "-i", str(video_path),
         "-stream_loop", "-1", "-i", str(bgm_path),
         "-filter_complex", filter_complex,
@@ -817,6 +818,8 @@ def add_background_music_to_video(
 
     cmd_amix = [
         ffmpeg, "-y",
+        "-fflags", "+genpts",
+        "-avoid_negative_ts", "make_zero",
         "-i", str(video_path),
         "-stream_loop", "-1", "-i", str(bgm_path),
         "-filter_complex", filter_complex_amix,
@@ -843,13 +846,16 @@ def add_background_music_to_video(
     try:
         cmd_fb = [
             ffmpeg, "-y",
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
             "-i", str(video_path),
             "-stream_loop", "-1", "-i", str(bgm_path),
             "-filter_complex", filter_complex_amix,
             "-map", "0:v",
             "-map", "[aout]",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "3500k", "-bufsize", "7000k",
-            "-c:a", "aac", "-b:a", "128k",
+            "-threads", "0",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-maxrate", "6000k", "-bufsize", "12000k",
+            "-c:a", "aac", "-b:a", "192k",
             "-t", str(dur),
             "-movflags", "+faststart",
             str(output_path)

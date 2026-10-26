@@ -202,120 +202,103 @@ TOPIC_ASPECT_ROTATION = [
     "epic visual composition"
 ]
 
+def translate_to_english_fast(text: str) -> str:
+    """
+    Fast dynamic translation for Indic scripts (Marathi/Hindi) so search engines
+    receive accurate keywords matching the exact script line. 100% free with no keys.
+    """
+    if not text or not text.strip():
+        return ""
+    has_devanagari = any('\u0900' <= ch <= '\u097f' for ch in text)
+    if not has_devanagari:
+        return text.strip()
+    try:
+        import requests
+        r = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": "auto", "tl": "en", "dt": "t", "q": text[:350]},
+            timeout=4,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if r.status_code == 200:
+            translated = "".join([item[0] for item in r.json()[0] if item and item[0]])
+            if translated and len(translated) > 2:
+                return translated.strip()
+    except Exception:
+        pass
+    return text.strip()
+
 def extract_scenario_search(sentence: str, topic: str = "", scene_idx: int = 1) -> dict:
     """
-    Extracts scenario-wise visual context, stock search queries,
-    and AI generation prompts strictly anchored to the main video topic.
-    Guarantees that 100% of scenes in a long video remain visually on-topic.
+    100% Dynamic Script-Driven Entity & Keyword Extractor:
+    Extracts visual subjects, actions, and entities DIRECTLY from the actual sentence text.
+    Zero static hardcoded concept maps or preset rotations!
     """
+    clean_topic = topic.strip() if topic else ""
     if not sentence or not sentence.strip():
-        base = topic.strip() if topic else "cinematic documentary"
+        base = clean_topic or "cinematic scene"
         return {
             "scenario": f"{base.title()} cinematic scene",
-            "keyword": f"{base} cinematic",
+            "keyword": f"{base}".strip(),
             "dalle_prompt": f"Cinematic 8k high-definition view of {base}"
         }
 
-    clean_text = sentence.lower()
-    clean_topic = topic.strip() if topic else ""
+    # 1. Translate dynamically if sentence is in Marathi/Hindi
+    translated = translate_to_english_fast(sentence)
 
-    # 1. Check Hindi concept mappings (longer specific terms take precedence)
-    matched_sub_concepts = []
-    for h_word, eng_term in sorted(HINDI_CONCEPT_MAP.items(), key=lambda x: len(x[0]), reverse=True):
-        if h_word in clean_text:
-            matched_sub_concepts.append(eng_term)
+    # 2. Extract substantive content words directly from the script line
+    raw_tokens = re.findall(r'[a-zA-Z0-9\'-]{3,}', translated.lower())
+    substantive_tokens = [w for w in raw_tokens if w not in STOPWORDS and not w.isdigit()]
 
-    # 2. Check English content words
-    eng_tokens = [w for w in re.findall(r'[a-zA-Z]{3,}', clean_text) if w not in STOPWORDS]
+    # Filter out words already in topic
+    t_lower = clean_topic.lower()
+    script_entities = [w for w in substantive_tokens if w not in t_lower][:3]
 
-    # Detect thematic setting
-    detected_theme = None
-    for entry in THEMATIC_SCENARIOS:
-        if any(t in clean_text for t in entry["triggers"]):
-            detected_theme = entry
-            break
-
-    # Build final scenario keyword strictly anchored to topic
     if clean_topic:
-        t_lower = clean_topic.lower()
-        if matched_sub_concepts:
-            sub_words = matched_sub_concepts[0].split()
-            filtered_sub = [w for w in sub_words if w not in t_lower][:2]
-            sub_str = " ".join(filtered_sub) if filtered_sub else sub_words[0]
-            scenario_kw = f"{clean_topic} {sub_str}".strip()
-        elif eng_tokens:
-            filtered_eng = [w for w in eng_tokens if w not in t_lower][:2]
-            if filtered_eng:
-                scenario_kw = f"{clean_topic} {' '.join(filtered_eng)}"
-            else:
-                aspect = TOPIC_ASPECT_ROTATION[(scene_idx - 1) % len(TOPIC_ASPECT_ROTATION)]
-                scenario_kw = f"{clean_topic} {aspect}"
-        elif detected_theme:
-            scenario_kw = f"{clean_topic} {detected_theme['triggers'][0]}"
+        if script_entities:
+            scenario_kw = f"{clean_topic} {' '.join(script_entities)}".strip()
         else:
-            aspect = TOPIC_ASPECT_ROTATION[(scene_idx - 1) % len(TOPIC_ASPECT_ROTATION)]
-            scenario_kw = f"{clean_topic} {aspect}"
+            scenario_kw = clean_topic
     else:
-        if detected_theme:
-            scenario_kw = f"{detected_theme['keyword']} {' '.join(eng_tokens[:2])}".strip()
-        elif eng_tokens:
-            scenario_kw = " ".join(eng_tokens[:3])
-        elif matched_sub_concepts:
-            scenario_kw = matched_sub_concepts[0]
-        else:
-            scenario_kw = "cinematic documentary landmark"
+        scenario_kw = " ".join(substantive_tokens[:4]) if substantive_tokens else sentence.strip()[:40]
 
-    subject_ref = f"{clean_topic}: {sentence.strip()[:100]}" if clean_topic else sentence.strip()[:100]
-    dalle_p = f"Cinematic 8k movie still of {subject_ref}, photorealistic masterpiece, 35mm photography, volumetric lighting, epic dramatic atmosphere, Unreal Engine 5 render style, highly detailed"
+    dalle_p = f"Cinematic 8k photorealistic documentary scene of {clean_topic + ': ' if clean_topic else ''}{sentence.strip()[:100]}, 35mm film photography, volumetric lighting, epic dramatic atmosphere, highly detailed"
 
     return {
-        "scenario": f"Scene {scene_idx}: {clean_topic.title() if clean_topic else 'Visual'} ({sentence.strip()[:60]}...)",
+        "scenario": f"Scene {scene_idx}: ({sentence.strip()[:60]}...)",
         "keyword": scenario_kw,
         "dalle_prompt": dalle_p
     }
 
 def extract_keywords(sentence: str, max_words: int = 3, topic: str = "") -> str:
-    """Legacy helper maintained for backward compatibility; calls scenario extractor."""
+    """Legacy helper maintained for backward compatibility; calls dynamic scenario extractor."""
     return extract_scenario_search(sentence, topic=topic)["keyword"]
 
 def generate_fallback_keywords(sentence: str, primary_kw: str, topic: str = "") -> list[str]:
     """
-    Generates intelligent alternative scenario queries when primary search yields no clips.
-    Strictly preserves the video's core visual subject topic instead of jumping to unrelated nature.
+    Generates intelligent alternative queries derived 100% dynamically from the sentence text.
+    Zero static aspect rotations!
     """
     fallbacks = []
     clean_topic = topic.strip() if topic else ""
+    translated = translate_to_english_fast(sentence)
+    tokens = [w for w in re.findall(r'[a-zA-Z0-9]{3,}', translated.lower()) if w not in STOPWORDS and not w.isdigit()]
 
     if clean_topic:
-        t_low = clean_topic.lower()
-        for aspect in TOPIC_ASPECT_ROTATION:
-            fb = f"{clean_topic} {aspect}"
-            if fb.lower() != primary_kw.lower() and fb not in fallbacks:
-                fallbacks.append(fb)
-        fallbacks.append(f"{clean_topic} architecture")
-        fallbacks.append(f"{clean_topic} aerial")
-        fallbacks.append(f"{clean_topic} cinematic 4k")
+        for t in tokens[:4]:
+            cand = f"{clean_topic} {t}"
+            if cand.lower() != primary_kw.lower() and cand not in fallbacks:
+                fallbacks.append(cand)
+        if clean_topic.lower() != primary_kw.lower():
+            fallbacks.append(clean_topic)
     else:
-        clean = re.sub(r'https?://\S+|[^\w\s]', ' ', sentence.lower())
-        sentence_words = [w for w in clean.split() if w not in STOPWORDS and len(w) > 2 and not w.isdigit()]
-        primary_tokens = set(primary_kw.lower().split())
-
-        for token in primary_tokens:
-            if len(token) > 3 and token not in fallbacks:
-                fallbacks.append(token)
-
-        remaining = [w for w in sentence_words if w not in primary_tokens]
-        if len(remaining) >= 2:
-            for i in range(len(remaining) - 1):
-                pair = f"{remaining[i]} {remaining[i+1]}"
-                if pair not in fallbacks:
-                    fallbacks.append(pair)
-        for w in remaining:
-            if len(w) > 3 and w not in fallbacks:
-                fallbacks.append(w)
-
-        fallbacks.append("cinematic documentary")
-        fallbacks.append("historical heritage monument")
+        for i in range(min(4, len(tokens) - 1)):
+            pair = f"{tokens[i]} {tokens[i+1]}"
+            if pair.lower() != primary_kw.lower() and pair not in fallbacks:
+                fallbacks.append(pair)
+        for t in tokens[:3]:
+            if t not in fallbacks:
+                fallbacks.append(t)
 
     return fallbacks
 
@@ -328,7 +311,8 @@ def detect_script_main_topic(script_text: str, custom_topic: str = "") -> str:
     If custom_topic is provided, returns that cleaned topic.
     Otherwise, inspects all sentences across the entire script for dominant thematic triggers and subject nouns.
     """
-    if custom_topic and custom_topic.strip():
+    generic_placeholders = {"youtube_video", "youtube video", "untitled", "video", "asset", "project", "my_video", "new video"}
+    if custom_topic and custom_topic.strip() and custom_topic.strip().lower() not in generic_placeholders:
         return custom_topic.strip()
     
     if not script_text or not script_text.strip():
@@ -394,8 +378,9 @@ def parse_script_to_scenes(
     detected_topic = detect_script_main_topic(script_text, custom_topic=main_topic)
 
     scenes = []
+    cum_time = 0.0
     for idx, text in enumerate(raw_chunks, start=1):
-        # 60% video / 40% image mix pattern (Opening hook is ALWAYS video for maximum visual impact!)
+        # Media assignment
         if default_media == "ai_flux":
             assigned_media = "ai_flux"
         elif default_media == "hybrid_ai":
@@ -409,15 +394,25 @@ def parse_script_to_scenes(
         else:  # 'invideo_mix'
             assigned_media = MEDIA_MIX_RATIO[(idx - 1) % len(MEDIA_MIX_RATIO)]
 
-        # Dynamic duration: speech-paced with speed scaling (1.25x Creator speed)
+        # Dynamic duration: speech-paced with speed scaling (default 1.0x natural human tempo)
         is_img = (assigned_media in ["image", "ai_flux"])
         dynamic_dur = calculate_content_duration(text, is_image=is_img, speed=speed)
+
+        # 🎯 FIRST 3 MINUTES TOPIC LOCK:
+        # All scenes whose cumulative start time is within the first 180 seconds (3 minutes)
+        # MUST strictly depict the core video topic (no generic off-topic stock visuals allowed!)
+        is_first_3_mins = (cum_time < 180.0)
+        cum_time += dynamic_dur
+
+        # In the first 3 minutes, allow both images & videos so authentic topic photos are fully utilized
+        if is_first_3_mins and assigned_media not in ["ai_flux"]:
+            assigned_media = "both"
 
         # SCENE 1 IS THE OPENING HOOK:
         # Strictly anchor to the Main Video Topic with dramatic, cinematic hero visual!
         if idx == 1:
             hook_kw = f"{detected_topic} cinematic dramatic reveal"
-            hook_scenario = f"🔥 Opening Hook Hero Visual: {detected_topic.title()}"
+            hook_scenario = f"🔥 0-3m Hook Hero Visual: {detected_topic.title()}"
             hook_prompt = f"Breathtaking cinematic wide-angle opening hero movie still of {detected_topic}, epic dramatic lighting, volumetric atmosphere, 8k National Geographic documentary style, photorealistic masterpiece"
             scenes.append({
                 "no": str(idx).zfill(2),
@@ -431,6 +426,8 @@ def parse_script_to_scenes(
                 "content_duration": dynamic_dur,
                 "custom_search": hook_kw,
                 "is_hook": True,
+                "is_first_3_mins": True,
+                "strict_topic_lock": True,
                 "hook_topic": detected_topic,
                 "main_topic": detected_topic
             })
@@ -439,19 +436,30 @@ def parse_script_to_scenes(
         # Scenario extraction for all subsequent scenes (ALWAYS topic anchored!)
         scenario_data = extract_scenario_search(text, topic=detected_topic, scene_idx=idx)
         sc_kw = scenario_data["keyword"]
+        for ph in ["YouTube_Video", "youtube_video", "YouTube Video", "youtube video"]:
+            sc_kw = sc_kw.replace(ph, "").strip()
+        if is_first_3_mins and detected_topic and detected_topic.lower() not in generic_placeholders:
+            # Enforce topic-first keywords for the entire first 3 minutes
+            sc_kw = f"{detected_topic} {sc_kw.replace(detected_topic, '').strip()}".strip()
+
+        sc_prompt = scenario_data["dalle_prompt"]
+        if is_first_3_mins:
+            sc_prompt = f"Cinematic 8k photorealistic documentary scene of {detected_topic}: {text}, 35mm film still, national geographic cinematography, highly detailed, photorealistic masterpiece"
 
         scenes.append({
             "no": str(idx).zfill(2),
             "text": text,
             "keyword": sc_kw,
-            "scenario": scenario_data["scenario"],
-            "dalle_prompt": scenario_data["dalle_prompt"],
+            "scenario": f"🎯 [0-3m Topic-Lock] {scenario_data['scenario']}" if is_first_3_mins else scenario_data["scenario"],
+            "dalle_prompt": sc_prompt,
             "type": assigned_media,
             "media_pref": assigned_media,
             "duration": dynamic_dur,
             "content_duration": dynamic_dur,
             "custom_search": sc_kw,
             "is_hook": False,
+            "is_first_3_mins": is_first_3_mins,
+            "strict_topic_lock": is_first_3_mins,
             "hook_topic": detected_topic,
             "main_topic": detected_topic
         })

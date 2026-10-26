@@ -728,7 +728,8 @@ def safe_search_assets(
     sentence: str = "",
     openai_key: str = DEFAULT_OPENAI_KEY,
     dalle_prompt: str = "",
-    main_topic: str = ""
+    main_topic: str = "",
+    is_first_3_mins: bool = False
 ):
     try:
         return search_assets(
@@ -740,7 +741,8 @@ def safe_search_assets(
             sentence=sentence,
             openai_key=openai_key,
             dalle_prompt=dalle_prompt,
-            main_topic=main_topic
+            main_topic=main_topic,
+            is_first_3_mins=is_first_3_mins
         )
     except TypeError:
         return search_assets(query=query, key=key, media_type=media_type, orientation=orientation, per_page=per_page)
@@ -882,22 +884,22 @@ with st.sidebar:
         speed_mode = st.selectbox(
             "Speech Pace",
             options=[
-                "1.25x Fast & Punchy (Viral)",
-                "1.00x Normal Speech",
+                "1.00x Natural Human Storyteller (Recommended)",
                 "1.15x Energetic YouTube Pace",
-                "1.35x Hyper Fast Pacing"
+                "1.25x Fast & Punchy (Viral)",
+                "0.90x Deep & Dramatic Documentary"
             ],
             index=0
         )
-        if "1.25x" in speed_mode:
-            speed_multiplier = 1.25
-            tts_rate_str = "+25%"
-        elif "1.15x" in speed_mode:
+        if "1.15x" in speed_mode:
             speed_multiplier = 1.15
             tts_rate_str = "+15%"
-        elif "1.35x" in speed_mode:
-            speed_multiplier = 1.35
-            tts_rate_str = "+35%"
+        elif "1.25x" in speed_mode:
+            speed_multiplier = 1.25
+            tts_rate_str = "+25%"
+        elif "0.90x" in speed_mode:
+            speed_multiplier = 0.90
+            tts_rate_str = "-10%"
         else:
             speed_multiplier = 1.0
             tts_rate_str = "+0%"
@@ -945,17 +947,33 @@ with st.sidebar:
             index=0
         )
 
-    with st.expander("🔑 API Credentials", expanded=False):
+    with st.expander("🔑 API Credentials & Media Sources", expanded=False):
         pixabay_key = st.text_input(
             "Pixabay API Key",
             value=DEFAULT_PIXABAY_KEY,
             type="password"
         )
         openai_key = st.text_input(
-            "OpenAI API Key (DALL-E Visual Fallback)",
+            "OpenAI API Key (DALL-E Visuals & Studio HD Voice)",
             value=DEFAULT_OPENAI_KEY,
-            type="password"
+            type="password",
+            help="Unlocks OpenAI DALL-E image generation and ultra-realistic Onyx/Echo HD voices"
         )
+        elevenlabs_key = st.text_input(
+            "ElevenLabs API Key (Optional Pro Voice)",
+            value=os.environ.get("ELEVENLABS_API_KEY", ""),
+            type="password",
+            help="Unlocks 100% human studio narration with natural breathing and emotion"
+        )
+        st.markdown("""
+        <div style="font-size: 0.73rem; color: #475569; background: #F1F5F9; padding: 8px 10px; border-radius: 6px; margin-top: 6px;">
+            <b>🏛️ 100% Free Stock Engines Active:</b><br/>
+            • <b>Pixabay:</b> 1080p Royalty-Free Videos & Photos<br/>
+            • <b>Wikimedia Commons:</b> Real Public-Domain History, Monuments & Art (No Key Required)<br/>
+            • <b>FLUX 8K AI:</b> Photorealistic Midjourney-grade scenes (100% Free & Unlimited)<br/>
+            <i>⚠️ Note: Shutterstock free API is not used because it places giant watermarks across videos and images.</i>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("""
     <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; margin-top: 14px; margin-bottom: 12px;">
@@ -1105,7 +1123,9 @@ def run_full_auto_video_pipeline(
     existing_scene_assets=None,
     existing_selected_assets=None,
     progress_callback=None,
-    cancel_event=None
+    cancel_event=None,
+    eleven_key: str = "",
+    **kwargs
 ):
     """
     Automates complete end-to-end video production in background:
@@ -1213,7 +1233,8 @@ def run_full_auto_video_pipeline(
                 sentence=sc_item['text'],
                 openai_key=ai_key,
                 dalle_prompt=sc_item.get('dalle_prompt', ''),
-                main_topic=topic_to_use
+                main_topic=topic_to_use,
+                is_first_3_mins=sc_item.get('is_first_3_mins', False)
             )
             if not res and m_type_to_search not in ["both", "video"]:
                 res = safe_search_assets(
@@ -1225,7 +1246,8 @@ def run_full_auto_video_pipeline(
                     sentence=sc_item['text'],
                     openai_key=ai_key,
                     dalle_prompt=sc_item.get('dalle_prompt', ''),
-                    main_topic=topic_to_use
+                    main_topic=topic_to_use,
+                    is_first_3_mins=sc_item.get('is_first_3_mins', False)
                 )
             if not res:
                 prompt_text = sc_item.get('dalle_prompt') or (f"Cinematic photorealistic 8k view of {topic_to_use}: {sc_item['text']}" if topic_to_use else sc_item['text'])
@@ -1307,6 +1329,12 @@ def run_full_auto_video_pipeline(
                 raw_path = try_path
                 chosen_asset = cand
                 break
+            # Fallback CDN link for Open Web images if primary origin blocks hotlinking
+            fb_url = cand.get('fallback_download', '')
+            if fb_url and download_file(fb_url, try_path) and try_path.exists() and try_path.stat().st_size > 1000:
+                raw_path = try_path
+                chosen_asset = cand
+                break
 
         # Fallback Tier 1: AI visual
         if not raw_path or not raw_path.exists():
@@ -1346,10 +1374,16 @@ def run_full_auto_video_pipeline(
         audio_path = None
         if do_voice and sc.get('text', '').strip():
             voice_file = job_dir / f"voice_{sc_no}.mp3"
-            voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=voice_name, rate=tts_rate)
+            voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=voice_name, rate=tts_rate, elevenlabs_key=eleven_key, openai_key=ai_key)
             if not (voice_dur and voice_file.exists() and voice_file.stat().st_size > 500):
-                backup_voice = "hi-IN-MadhurNeural" if "hi-IN" not in voice_name else "en-US-ChristopherNeural"
-                voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=backup_voice, rate=tts_rate)
+                has_devanagari = any('\u0900' <= ch <= '\u097f' for ch in sc['text'])
+                if "mr-IN" in voice_name or (has_devanagari and "mr-IN" in DEFAULT_VOICE):
+                    backup_voice = "mr-IN-ManoharNeural"
+                elif "hi-IN" in voice_name or has_devanagari:
+                    backup_voice = "hi-IN-MadhurNeural"
+                else:
+                    backup_voice = "en-US-ChristopherNeural"
+                voice_dur = generate_human_voiceover(sc['text'], voice_file, voice=backup_voice, rate=tts_rate, elevenlabs_key=eleven_key, openai_key=ai_key)
 
             if voice_dur and voice_file.exists() and voice_file.stat().st_size > 500:
                 audio_path = voice_file
@@ -1388,8 +1422,8 @@ def run_full_auto_video_pipeline(
         }
 
     prep_results = []
-    numbered_assets_for_zip = []
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    max_prep_workers = min(8, max(4, (os.cpu_count() or 4) * 2))
+    with ThreadPoolExecutor(max_workers=max_prep_workers) as executor:
         futures_prep = {executor.submit(_prep_single_scene, (i, sc)): i for i, sc in enumerate(scenes)}
         done_prep = 0
         for fut in as_completed(futures_prep):
@@ -1471,7 +1505,8 @@ def run_full_auto_video_pipeline(
         return i, clip_path, ok
 
     encoded_clips = []
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    max_enc_workers = min(4, max(2, os.cpu_count() or 4))
+    with ThreadPoolExecutor(max_workers=max_enc_workers) as executor:
         futures_enc = {executor.submit(_encode_single_scene, pd): pd["index"] for pd in prep_results}
         done_enc = 0
         for fut in as_completed(futures_enc):
@@ -2133,23 +2168,30 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
 
         # Determine effective main topic: User-entered title takes 100% precedence
         main_topic_input = (user_title_val or "").strip()
-        if not main_topic_input:
+        generic_placeholders = {"youtube_video", "youtube video", "untitled", "video", "asset", "project", ""}
+        if not main_topic_input or main_topic_input.lower() in generic_placeholders:
             main_topic_input = st.session_state.get("custom_main_topic", "")
-        if not main_topic_input and script_input.strip():
+        if (not main_topic_input or main_topic_input.lower() in generic_placeholders) and script_input.strip():
             first_lines = [l.strip() for l in script_input.split('\n') if l.strip()]
             if first_lines:
-                main_topic_input = re.sub(r'^[0-9\.\-\:\#\*\s]+', '', first_lines[0])[:60].strip()
-        if not main_topic_input:
-            main_topic_input = "YouTube_Video"
+                cand = re.sub(r'^[0-9\.\-\:\#\*\s]+', '', first_lines[0])[:60].strip()
+                if cand and cand.lower() not in generic_placeholders:
+                    main_topic_input = cand
+        if not main_topic_input or main_topic_input.lower() in generic_placeholders:
+            try:
+                from script_parser import detect_script_main_topic
+                main_topic_input = detect_script_main_topic(script_input)
+            except Exception:
+                main_topic_input = "Cinematic Documentary"
 
         st.session_state.custom_main_topic = main_topic_input
         st.session_state.current_topic = main_topic_input
 
-        col_inf_l, col_inf_r = st.columns([3, 1.5])
+        col_inf_l, col_inf_r = st.columns([3.5, 1.2])
         with col_inf_l:
             st.markdown(f"""
             <div style="margin-top: 4px; margin-bottom: 10px;">
-                <span style="font-size: 0.78rem; font-weight: 600; color: #64748B;">{line_count} lines • {char_count} characters • Visual Anchor: <b style="color:#4F46E5;">{main_topic_input}</b></span>
+                <span style="font-size: 0.78rem; font-weight: 600; color: #64748B;">{line_count} lines • Visual Anchor: <b style="color:#4F46E5;">{main_topic_input}</b> • <span style="background: #DCFCE7; color: #166534; padding: 2px 7px; border-radius: 4px; font-weight: 700;">🎯 0–3m Topic-Lock Active</span></span>
             </div>
             """, unsafe_allow_html=True)
         with col_inf_r:
@@ -2175,19 +2217,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 selected_voice = st.selectbox(
                     "🎙️ Voice narrator",
                     options=voice_keys,
-                    format_func=lambda k: {
-                        "hi-IN-MadhurNeural": "🇮🇳 Madhur (Hindi Male - Deep)",
-                        "hi-IN-SwaraNeural": "🇮🇳 Swara (Hindi Female - Clear)",
-                        "en-IN-PrabhatNeural": "🇮🇳 Prabhat (Hinglish Male)",
-                        "en-IN-NeerjaExpressiveNeural": "🇮🇳 Neerja (Hinglish Female)",
-                        "mr-IN-ManoharNeural": "🚩 Manohar (Marathi Male - Story)",
-                        "mr-IN-AarohiNeural": "🚩 Aarohi (Marathi Female - Clear)",
-                        "en-US-ChristopherNeural": "🇺🇸 Christopher (US Storyteller)",
-                        "en-US-JennyNeural": "🇺🇸 Jenny (US Female)",
-                        "en-US-GuyNeural": "🇺🇸 Guy (US Vlogger)",
-                        "en-US-AriaNeural": "🇺🇸 Aria (US Professional)",
-                        "en-GB-RyanNeural": "🇬🇧 Ryan (British Male)"
-                    }.get(k, VOICE_CATALOG.get(k, k).split('(')[0].strip()),
+                    format_func=lambda k: VOICE_CATALOG.get(k, k).split('(')[0].strip(),
                     index=idx_v
                 )
                 st.session_state.selected_voice = selected_voice
@@ -2408,6 +2438,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 "do_voice": enable_voiceover,
                 "pb_key": pixabay_key,
                 "ai_key": openai_key,
+                "eleven_key": elevenlabs_key,
                 "tw": target_w,
                 "th": target_h,
                 "orient": orientation,
