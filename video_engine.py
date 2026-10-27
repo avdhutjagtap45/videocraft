@@ -56,6 +56,68 @@ def get_ffmpeg_path() -> str:
     """Returns absolute path to the bundled FFmpeg binary."""
     return imageio_ffmpeg.get_ffmpeg_exe()
 
+_cached_best_encoder: Optional[Tuple[str, List[str], str]] = None
+
+def get_best_video_encoder() -> Tuple[str, List[str], str]:
+    """
+    Auto-detects hardware GPU video encoder (Intel QSV / NVIDIA NVENC / AMD AMF)
+    with seamless fallback to CPU libx264.
+    Returns: (encoder_name, encoder_cli_args, human_readable_label)
+    """
+    global _cached_best_encoder
+    if _cached_best_encoder is not None:
+        return _cached_best_encoder
+
+    ffmpeg = get_ffmpeg_path()
+    candidates = [
+        ("h264_qsv", ["-preset", "veryfast", "-global_quality", "23", "-pix_fmt", "nv12"], "⚡ Intel Quick Sync Video (QSV GPU)"),
+        ("h264_nvenc", ["-preset", "p4", "-cq", "23", "-pix_fmt", "yuv420p"], "⚡ NVIDIA NVENC (GPU Accelerated)"),
+        ("h264_amf", ["-usage", "transcoding", "-quality", "speed", "-pix_fmt", "nv12"], "⚡ AMD AMF (GPU Accelerated)"),
+        ("libx264", ["-preset", "ultrafast", "-crf", "22", "-pix_fmt", "yuv420p"], "💻 CPU Ultrafast x264")
+    ]
+
+    for enc, flags, label in candidates:
+        try:
+            cmd = [
+                ffmpeg, "-y",
+                "-f", "lavfi", "-i", "testsrc=duration=0.1:size=320x240:rate=30",
+                "-c:v", enc, *flags,
+                "-f", "null", "-"
+            ]
+            r = subprocess.run(cmd, capture_output=True, timeout=5)
+            if r.returncode == 0:
+                _cached_best_encoder = (enc, flags, label)
+                print(f"[VideoEngine] Active Video Hardware Acceleration: {label}")
+                return _cached_best_encoder
+        except Exception:
+            continue
+
+    _cached_best_encoder = ("libx264", ["-preset", "ultrafast", "-crf", "22", "-pix_fmt", "yuv420p"], "💻 CPU Ultrafast x264")
+    return _cached_best_encoder
+
+AMBIENT_CATALOG: Dict[str, Dict[str, Any]] = {
+    "none": {
+        "name": "🔇 None (Pure Voice & BGM)",
+        "filter": None
+    },
+    "rain_storm": {
+        "name": "⛈️ Rain & Distant Thunder (Mystery / Horror)",
+        "filter": "anoisesrc=color=pink:duration={dur}:amplitude=0.22,bandpass=f=750:width_type=h:width=1100,volume=0.18"
+    },
+    "cosmic_hum": {
+        "name": "🌌 Cosmic Drone & Deep Space (Sci-Fi / Universe)",
+        "filter": "sine=frequency=68:duration={dur},lowpass=f=120,volume=0.14"
+    },
+    "clock_tension": {
+        "name": "⏳ Ticking Clock Pulse (Thriller / Suspense)",
+        "filter": "anoisesrc=color=white:duration={dur}:amplitude=0.3,bandpass=f=2200:width_type=h:width=300,volume=0.12"
+    },
+    "deep_abyss": {
+        "name": "🌊 Deep Ocean Abyss (Submerged Mystery)",
+        "filter": "anoisesrc=color=brown:duration={dur}:amplitude=0.3,lowpass=f=200,volume=0.15"
+    }
+}
+
 def _ensure_sfx_assets() -> Tuple[Path, Path]:
     """Guarantees studio-grade Hook Boom and Transition Whoosh SFX exist in the bgm directory."""
     whoosh_path = BGM_DIR / "whoosh.mp3"
@@ -149,17 +211,94 @@ def download_file(url: str, dest_path: Path, timeout: int = 25) -> bool:
                 pass
         return False
 
-def _get_system_font(size: int, bold: bool = True) -> ImageFont.ImageFont:
-    """Load system font with robust fallbacks on Windows/Linux/Mac."""
-    bold_candidates = ["segoeuib.ttf", "arialbd.ttf", "calibrib.ttf", "arial.ttf", "DejaVuSans-Bold.ttf"]
-    regular_candidates = ["segoeui.ttf", "arial.ttf", "calibri.ttf", "DejaVuSans.ttf"]
-    candidates = bold_candidates if bold else regular_candidates
+def _has_non_latin(text: str) -> bool:
+    """Checks if text contains Devanagari, Indic, Arabic, Asian, or other non-Latin scripts."""
+    if not text:
+        return False
+    return any(ord(c) > 0x024F for c in text)
 
+def _font_supports_text(font: ImageFont.ImageFont, text: str) -> bool:
+    """Verifies that the loaded TrueType font does not render .notdef (tofu boxes) for the text characters."""
+    if not font or not text:
+        return True
+    try:
+        notdef_mask = list(font.getmask(chr(0xFFFF)))
+        sample = [c for c in text if ord(c) > 0x024F][:20]
+        for c in sample:
+            if list(font.getmask(c)) == notdef_mask:
+                return False
+        return True
+    except Exception:
+        return True
+
+def _get_system_font(size: int, bold: bool = True, impact: bool = False, text: str = "") -> ImageFont.ImageFont:
+    """
+    Load system font with robust fallbacks on Windows/Linux/Mac.
+    Automatically detects Hindi/Devanagari, Marathi, and Indic scripts to select Nirmala UI / Arial Unicode / Mangal,
+    completely preventing missing character tofu boxes (▯▯▯).
+    """
+    is_indic = _has_non_latin(text)
+
+    if is_indic:
+        # Prioritize Windows/Linux Indic fonts with native Devanagari glyphs
+        if bold or impact:
+            candidates = [
+                "NirmalaB.ttf", "mangal.ttf", "mangalb.ttf", "ARIALUNI.TTF",
+                "Nirmala.ttf", "aparajb.ttf", "kokilab.ttf", "utsahb.ttf",
+                "NotoSansDevanagari-Bold.ttf", "NotoSans-Bold.ttf",
+                "segoeuib.ttf", "arialbd.ttf"
+            ]
+        else:
+            candidates = [
+                "Nirmala.ttf", "NirmalaS.ttf", "mangal.ttf", "ARIALUNI.TTF",
+                "NirmalaB.ttf", "aparaj.ttf", "kokila.ttf", "utsah.ttf",
+                "NotoSansDevanagari-Regular.ttf", "NotoSans-Regular.ttf",
+                "segoeui.ttf", "arial.ttf"
+            ]
+    else:
+        impact_candidates = [
+            "impact.ttf", "arialbd.ttf", "segoeuib.ttf", "calibrib.ttf",
+            "NirmalaB.ttf", "DejaVuSans-Bold.ttf"
+        ]
+        bold_candidates = [
+            "segoeuib.ttf", "arialbd.ttf", "calibrib.ttf", "NirmalaB.ttf",
+            "arial.ttf", "DejaVuSans-Bold.ttf"
+        ]
+        regular_candidates = [
+            "segoeui.ttf", "arial.ttf", "calibri.ttf", "Nirmala.ttf",
+            "DejaVuSans.ttf"
+        ]
+        if impact:
+            candidates = impact_candidates
+        elif bold:
+            candidates = bold_candidates
+        else:
+            candidates = regular_candidates
+
+    # Search candidates and ensure font supports the text without tofu boxes
     for font_name in candidates:
         try:
-            return ImageFont.truetype(font_name, size)
+            f = ImageFont.truetype(font_name, size)
+            if is_indic and text:
+                if not _font_supports_text(f, text):
+                    continue
+            return f
         except Exception:
             continue
+
+    # Explicit Windows Fonts directory check for Indic scripts
+    if is_indic and os.name == 'nt':
+        win_fonts_dir = Path("C:/Windows/Fonts")
+        for f_name in ["NirmalaB.ttf", "Nirmala.ttf", "mangal.ttf", "ARIALUNI.TTF", "aparaj.ttf"]:
+            p = win_fonts_dir / f_name
+            if p.exists():
+                try:
+                    f = ImageFont.truetype(str(p), size)
+                    if not text or _font_supports_text(f, text):
+                        return f
+                except Exception:
+                    pass
+
     try:
         return ImageFont.load_default()
     except Exception:
@@ -277,8 +416,8 @@ def create_overlay_image(
             badge_font_size = max(18, int(26 * scale_factor))
             sub_font_size = max(24, int(34 * scale_factor))
 
-        badge_font = _get_system_font(badge_font_size, bold=True)
-        sub_font = _get_system_font(sub_font_size, bold=True)
+        badge_font = _get_system_font(badge_font_size, bold=True, text=scene_no)
+        sub_font = _get_system_font(sub_font_size, bold=True, text=scene_text or "")
 
         # 1. Studio-grade Scene Number Badge
         if show_badge:
@@ -323,6 +462,11 @@ def create_overlay_image(
                 fill=(248, 250, 252, 255)
             )
 
+        is_hormozi = "hormozi" in subtitle_style.lower()
+        is_mrbeast = "mrbeast" in subtitle_style.lower()
+        is_creator_viral = "creator" in subtitle_style.lower() or "viral" in subtitle_style.lower() or is_hormozi or is_mrbeast
+        sub_font = _get_system_font(sub_font_size, bold=True, impact=(is_hormozi or is_mrbeast), text=scene_text or "")
+
         # 2. Studio / Creator Subtitles
         if show_subtitle and scene_text and scene_text.strip():
             max_sub_w = int(width * (0.88 if is_vertical else 0.82))
@@ -349,31 +493,38 @@ def create_overlay_image(
                     bottom_margin = int(60 * scale_factor)
                     sub_y = height - box_sub_h - bottom_margin
 
-                is_creator_viral = "creator" in subtitle_style.lower() or "viral" in subtitle_style.lower()
-
                 # Backdrop styling
-                if is_creator_viral:
-                    # High-impact creator card with neon accent border
-                    draw.rounded_rectangle(
-                        [sub_x, sub_y, sub_x + box_sub_w, sub_y + box_sub_h],
-                        radius=int(18 * scale_factor),
-                        fill=(10, 15, 29, 235),
-                        outline=(250, 204, 21, 230),  # Vibrant Golden-Yellow creator outline
-                        width=max(2, int(2.5 * scale_factor))
-                    )
+                if is_hormozi:
+                    card_fill = (8, 12, 22, 245)
+                    card_outline = (250, 204, 21, 245)  # Viral Gold
+                    card_border_w = max(2, int(3.0 * scale_factor))
+                elif is_mrbeast:
+                    card_fill = (10, 18, 15, 245)
+                    card_outline = (34, 197, 94, 245)  # MrBeast Emerald
+                    card_border_w = max(2, int(3.0 * scale_factor))
+                elif is_creator_viral:
+                    card_fill = (10, 15, 29, 235)
+                    card_outline = (250, 204, 21, 230)  # Classic Creator Gold
+                    card_border_w = max(2, int(2.5 * scale_factor))
                 else:
-                    # Classic translucent dark cinematic banner
-                    draw.rounded_rectangle(
-                        [sub_x, sub_y, sub_x + box_sub_w, sub_y + box_sub_h],
-                        radius=int(16 * scale_factor),
-                        fill=(8, 12, 22, 215),
-                        outline=(255, 255, 255, 120),
-                        width=max(1, int(1.5 * scale_factor))
-                    )
+                    card_fill = (8, 12, 22, 215)
+                    card_outline = (255, 255, 255, 120)
+                    card_border_w = max(1, int(1.5 * scale_factor))
+
+                draw.rounded_rectangle(
+                    [sub_x, sub_y, sub_x + box_sub_w, sub_y + box_sub_h],
+                    radius=int(18 * scale_factor),
+                    fill=card_fill,
+                    outline=card_outline,
+                    width=card_border_w
+                )
 
                 # Render text lines with crisp outline stroke & viral word-level trigger highlighting
                 space_box = draw.textbbox((0, 0), " ", font=sub_font)
                 space_w = space_box[2] - space_box[0]
+
+                trigger_color = (74, 222, 128, 255) if is_mrbeast else (254, 224, 60, 255)
+                stroke_w = max(3, int(4.0 * scale_factor)) if (is_hormozi or is_mrbeast) else max(2, int(3.0 * scale_factor))
 
                 for i, line in enumerate(lines):
                     ly = sub_y + pad_sub_y + i * line_height
@@ -387,18 +538,16 @@ def create_overlay_image(
                     total_line_w = sum(word_widths) + space_w * max(0, len(line_words) - 1)
                     cur_x = sub_x + (box_sub_w - total_line_w) // 2
 
-                    stroke_w = max(2, int(3.5 * scale_factor))
-
                     for w_idx, (word, w_w) in enumerate(zip(line_words, word_widths)):
                         is_trigger = is_creator_viral and _is_script_trigger_word(word, line_words, w_idx)
 
                         if is_trigger:
-                            # Dynamic Script Trigger Highlight: Radiant Golden Yellow (Viral retention pop)
+                            # Dynamic Script Trigger Highlight: Radiant Golden Yellow or Emerald (Viral retention pop)
                             draw.text(
                                 (cur_x, ly),
                                 word,
                                 font=sub_font,
-                                fill=(254, 224, 60, 255),
+                                fill=trigger_color,
                                 stroke_width=stroke_w,
                                 stroke_fill=(0, 0, 0, 255)
                             )
@@ -449,8 +598,8 @@ def create_fallback_slide(
             draw.line([(0, y), (width, y)], fill=(r, g, b), width=2)
 
         scale_factor = width / 1920.0
-        font_title = _get_system_font(max(24, int(46 * scale_factor)), bold=True)
-        font_body = _get_system_font(max(18, int(30 * scale_factor)), bold=False)
+        font_title = _get_system_font(max(24, int(46 * scale_factor)), bold=True, text=title)
+        font_body = _get_system_font(max(18, int(30 * scale_factor)), bold=False, text=text)
 
         margin_x = int(width * 0.10)
         margin_y = int(height * 0.12)
@@ -636,17 +785,14 @@ def process_scene_clip(
     else:
         filter_complex = f"[0:v]{base_video_filter}[v];{audio_filter}"
 
+    best_enc, best_flags, _ = get_best_video_encoder()
     cmd += [
         "-threads", "0",
         "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", "[a]",
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-crf", "22",
-        "-maxrate", "6000k",
-        "-bufsize", "12000k",
-        "-pix_fmt", "yuv420p",
+        "-c:v", best_enc,
+        *best_flags,
         "-c:a", "aac",
         "-b:a", "192k",
         "-t", str(duration),
@@ -711,21 +857,26 @@ def process_scene_clip(
 
 def add_background_music_to_video(
     video_path: Path,
-    bgm_path: Path,
+    bgm_path: Optional[Path],
     output_path: Path,
     bgm_volume: float = 0.12,
-    fade_out_duration: float = 2.0
+    fade_out_duration: float = 2.0,
+    ambient_key: str = "none"
 ) -> bool:
     """
-    Mixes suspense/cinematic background music under the video's voiceover narration track:
+    Mixes suspense/cinematic background music & atmospheric soundscape under the video's voiceover narration track:
     - Auto-loops BGM to cover total video runtime seamlessly
-    - Ducks BGM to configured subtle volume (e.g. 0.12)
-    - Fades in BGM over 1.0s and smoothly fades out over 2.0s at video conclusion
+    - Ducks BGM to configured subtle volume (e.g. 0.12) with sidechain compression
+    - Injects optional atmospheric ambient layers (Rain/Thunder, Cosmic Drone, Clock Ticking, Ocean Abyss)
     - Keeps video stream intact via stream copy (lightning fast, lossless video)
     """
     if not video_path.exists():
         return False
-    if not bgm_path or not bgm_path.exists():
+
+    has_bgm = bool(bgm_path and Path(bgm_path).exists())
+    has_ambient = bool(ambient_key and ambient_key != "none" and ambient_key in AMBIENT_CATALOG and AMBIENT_CATALOG[ambient_key].get("filter"))
+
+    if not has_bgm and not has_ambient:
         import shutil
         shutil.copy2(video_path, output_path)
         return output_path.exists()
@@ -763,25 +914,57 @@ def add_background_music_to_video(
         dur = 30.0
 
     st_fade = max(0.0, dur - fade_out_duration)
-    # Master Cinematic Sidechain Ducking:
-    # Voice is boosted (+30%) and BGM is gracefully ducked during narration.
     bgm_peak = min(0.20, max(0.08, bgm_volume * 1.5))
-    filter_complex = (
-        f"[1:a]volume={bgm_peak:.3f},"
-        f"afade=t=in:st=0:d=1.0,"
-        f"afade=t=out:st={st_fade:.2f}:d={fade_out_duration:.2f},"
-        f"aformat=channel_layouts=stereo:sample_rates=44100[bgm_raw];"
-        f"[0:a]volume=1.30,aformat=channel_layouts=stereo:sample_rates=44100[narr];"
-        f"[bgm_raw][narr]sidechaincompress=threshold=0.03:ratio=8:attack=40:release=350[ducked_bgm];"
-        f"[narr][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
-    )
 
     cmd = [
         ffmpeg, "-y",
         "-fflags", "+genpts",
         "-avoid_negative_ts", "make_zero",
-        "-i", str(video_path),
-        "-stream_loop", "-1", "-i", str(bgm_path),
+        "-i", str(video_path)
+    ]
+    cur_idx = 1
+    bgm_in_idx = None
+    ambient_in_idx = None
+
+    if has_bgm:
+        cmd += ["-stream_loop", "-1", "-i", str(bgm_path)]
+        bgm_in_idx = cur_idx
+        cur_idx += 1
+
+    if has_ambient:
+        amb_spec = AMBIENT_CATALOG[ambient_key]["filter"].format(dur=max(10, int(dur + 5)))
+        cmd += ["-f", "lavfi", "-i", amb_spec]
+        ambient_in_idx = cur_idx
+        cur_idx += 1
+
+    mix_inputs = ["[narr]"]
+    filter_parts = [
+        f"[0:a]volume=1.30,aformat=channel_layouts=stereo:sample_rates=44100[narr]"
+    ]
+
+    if bgm_in_idx is not None:
+        filter_parts.append(
+            f"[{bgm_in_idx}:a]volume={bgm_peak:.3f},"
+            f"afade=t=in:st=0:d=1.0,"
+            f"afade=t=out:st={st_fade:.2f}:d={fade_out_duration:.2f},"
+            f"aformat=channel_layouts=stereo:sample_rates=44100[bgm_raw];"
+            f"[bgm_raw][narr]sidechaincompress=threshold=0.03:ratio=8:attack=40:release=350[ducked_bgm]"
+        )
+        mix_inputs.append("[ducked_bgm]")
+
+    if ambient_in_idx is not None:
+        filter_parts.append(
+            f"[{ambient_in_idx}:a]afade=t=in:st=0:d=1.0,afade=t=out:st={st_fade:.2f}:d={fade_out_duration:.2f},"
+            f"aformat=channel_layouts=stereo:sample_rates=44100[amb_audio]"
+        )
+        mix_inputs.append("[amb_audio]")
+
+    filter_parts.append(
+        f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=0:normalize=0[aout]"
+    )
+    filter_complex = ";".join(filter_parts)
+
+    cmd += [
         "-filter_complex", filter_complex,
         "-map", "0:v",
         "-map", "[aout]",

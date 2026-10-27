@@ -1,3 +1,5 @@
+from ast import Dict
+from typing import Any
 import subprocess
 import io
 import csv
@@ -20,12 +22,14 @@ except ImportError:
 import os
 import shutil
 DEFAULT_PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "57909969-ce94fac88b6effdff830e1aff")
+DEFAULT_PEXELS_KEY = os.environ.get("PEXELS_API_KEY", "")
 DEFAULT_OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 try:
     from pixabay_api import (
         search_assets,
         DEFAULT_PIXABAY_KEY,
+        DEFAULT_PEXELS_KEY,
         DEFAULT_OPENAI_KEY,
         generate_ai_image,
         ensure_unique_selections,
@@ -83,6 +87,8 @@ from video_engine import (
     merge_clips_to_final_video,
     make_numbered_zip,
     get_ffmpeg_path,
+    get_best_video_encoder,
+    AMBIENT_CATALOG,
     BGM_CATALOG,
     BGM_DIR,
     add_background_music_to_video,
@@ -729,7 +735,8 @@ def safe_search_assets(
     openai_key: str = DEFAULT_OPENAI_KEY,
     dalle_prompt: str = "",
     main_topic: str = "",
-    is_first_3_mins: bool = False
+    is_first_3_mins: bool = False,
+    pexels_key: str = ""
 ):
     try:
         return search_assets(
@@ -742,7 +749,8 @@ def safe_search_assets(
             openai_key=openai_key,
             dalle_prompt=dalle_prompt,
             main_topic=main_topic,
-            is_first_3_mins=is_first_3_mins
+            is_first_3_mins=is_first_3_mins,
+            pexels_key=pexels_key
         )
     except TypeError:
         return search_assets(query=query, key=key, media_type=media_type, orientation=orientation, per_page=per_page)
@@ -844,7 +852,15 @@ with st.sidebar:
         </div>
         <span style="font-size: 0.68rem; color: #059669; background: #ECFDF5; border: 1px solid #A7F3D0; padding: 2px 8px; border-radius: 999px; font-weight: 700;">● Active</span>
     </div>
-    <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; margin: 4px 0 8px 0;">AUDIO SETTINGS</div>
+    """, unsafe_allow_html=True)
+
+    best_enc, _, gpu_label = get_best_video_encoder()
+    st.markdown(f"""
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 0.73rem; color: #475569; font-weight: 700;">Rendering Engine</span>
+        <span style="font-size: 0.70rem; color: #4F46E5; background: #EEF2FF; border: 1px solid #C7D2FE; padding: 2px 8px; border-radius: 999px; font-weight: 700;">{gpu_label}</span>
+    </div>
+    <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase; margin: 4px 0 8px 0;">AUDIO & ATMOSPHERE</div>
     """, unsafe_allow_html=True)
 
     # Background Music
@@ -867,6 +883,15 @@ with st.sidebar:
         step=0.01,
         format="%.2f",
         disabled=(selected_bgm_key == "none")
+    )
+
+    ambient_options = list(AMBIENT_CATALOG.keys())
+    selected_ambient_key = st.selectbox(
+        "🌌 Atmospheric Ambience Layer",
+        options=ambient_options,
+        format_func=lambda k: AMBIENT_CATALOG.get(k, {}).get("name", k),
+        index=0,
+        help="Subtle background sound layer (Rain, Cosmic Hum, Clock Ticking) that gives documentary videos high sensory retention."
     )
 
     sfx_volume = st.slider(
@@ -920,7 +945,9 @@ with st.sidebar:
         subtitle_style_choice = st.selectbox(
             "Subtitle Style",
             [
-                "🔥 Creator Viral (Yellow/White Accent + Stroke)",
+                "🔥 Hormozi Viral Pop (Bold Impact + Neon Yellow/Cyan)",
+                "✨ MrBeast Dynamic (Impact + Emerald Green/Gold)",
+                "🚀 Creator Viral (Classic Yellow Accent)",
                 "🎬 Studio Box (Translucent Dark Banner)",
                 "✨ Minimal Clean (Drop Shadow)"
             ],
@@ -952,6 +979,12 @@ with st.sidebar:
             "Pixabay API Key",
             value=DEFAULT_PIXABAY_KEY,
             type="password"
+        )
+        pexels_key = st.text_input(
+            "Pexels API Key (Free 4K Cinema B-Roll)",
+            value=DEFAULT_PEXELS_KEY,
+            type="password",
+            help="Free API key from pexels.com/api - unlocks cinematic 4K B-Roll footage"
         )
         openai_key = st.text_input(
             "OpenAI API Key (DALL-E Visuals & Studio HD Voice)",
@@ -1087,9 +1120,123 @@ if hasattr(st, "dialog"):
                     st.session_state.selected_voice = e_choice
                     st.success(f"Selected: {VOICE_CATALOG.get(e_choice, e_choice)}!")
                     st.rerun()
-else:
-    def open_voice_selection_dialog():
-        st.info("Please use the Voice dropdown directly in Step 1.")
+def render_preview_scene_1(params: Dict[str, Any]) -> Optional[Path]:
+    """
+    Renders an ultra-fast 3-second preview of Scene 1:
+    - Verifies voiceover, typography, subtitle outlines, and dynamic motion
+    - Completes in ~3-4 seconds with hardware GPU acceleration
+    """
+    try:
+        script_text = params.get("script_text", "").strip()
+        if not script_text:
+            return None
+
+        scenes = parse_script_to_scenes(
+            script_text,
+            default_duration=3.5,
+            default_media=params.get("media_pref", "both"),
+            speed=params.get("speed_mult", 1.0),
+            main_topic=params.get("main_topic", "")
+        )
+        if not scenes:
+            return None
+
+        sc = scenes[0]
+        preview_dest = DOWNLOADS_DIR / "preview_scene_1.mp4"
+        job_dir = DOWNLOADS_DIR / f"preview_job_{int(time.time()*1000)}"
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        tw = params.get("tw", 1920)
+        th = params.get("th", 1080)
+        topic = params.get("main_topic") or sc.get("keyword", "scene")
+
+        # 1. Voice
+        voice_f = job_dir / "preview_voice.mp3"
+        voice_dur = generate_human_voiceover(
+            sc["text"],
+            voice_f,
+            voice=params.get("voice_name", DEFAULT_VOICE),
+            rate=params.get("tts_rate", "+0%"),
+            openai_key=params.get("ai_key", ""),
+            elevenlabs_key=params.get("eleven_key", "")
+        )
+        scene_dur = round(max(2.5, (voice_dur + 0.3) if voice_dur else 3.5), 2)
+        audio_track = voice_f if (voice_dur and voice_f.exists() and voice_f.stat().st_size > 500) else None
+
+        # 2. Visual
+        cand_list = safe_search_assets(
+            query=sc.get("keyword", topic),
+            key=params.get("pb_key", DEFAULT_PIXABAY_KEY),
+            media_type=params.get("media_pref", "both"),
+            orientation=params.get("orient", "horizontal"),
+            per_page=5,
+            sentence=sc.get("text", ""),
+            openai_key=params.get("ai_key", ""),
+            main_topic=topic,
+            pexels_key=params.get("pexels_key", "")
+        )
+        raw_media = None
+        is_img = False
+        if cand_list:
+            chosen = cand_list[0]
+            ext = ".jpg" if chosen.get("type") == "image" else ".mp4"
+            try_media = job_dir / f"preview_media{ext}"
+            if download_file(chosen.get("download", ""), try_media) and try_media.exists() and try_media.stat().st_size > 1000:
+                raw_media = try_media
+                is_img = (chosen.get("type") == "image")
+
+        if not raw_media or not raw_media.exists():
+            slide_p = job_dir / "preview_slide.jpg"
+            create_fallback_slide(
+                slide_p,
+                width=tw,
+                height=th,
+                title=f"Scene 01: {sc.get('keyword', topic).title()}",
+                text=sc.get('text', '')
+            )
+            raw_media = slide_p
+            is_img = True
+
+        # 3. Subtitle overlay
+        ov_p = job_dir / "preview_overlay.png"
+        create_overlay_image(
+            width=tw,
+            height=th,
+            scene_no="01",
+            output_png=ov_p,
+            scene_text=sc.get("text", "") if params.get("b_subs", True) else None,
+            show_badge=params.get("b_badge", True),
+            badge_style=params.get("b_style", "Pill (#01)"),
+            badge_position=params.get("b_pos", "Top Left"),
+            show_subtitle=params.get("b_subs", True),
+            subtitle_style=params.get("sub_style", "🔥 Hormozi Viral Pop (Bold Impact + Neon Yellow/Cyan)")
+        )
+
+        # 4. Render Clip
+        ok = safe_process_scene_clip(
+            media_path=raw_media,
+            output_path=preview_dest,
+            target_w=tw,
+            target_h=th,
+            duration=scene_dur,
+            is_image=is_img,
+            overlay_path=ov_p,
+            audio_path=audio_track,
+            fit_mode=params.get("fit_m", "cover"),
+            ken_burns_style=params.get("kb_style", "auto"),
+            scene_index=0,
+            sfx_vol=params.get("sfx_vol", 0.35)
+        )
+        try:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+        if ok and preview_dest.exists() and preview_dest.stat().st_size > 0:
+            return preview_dest
+    except Exception as e:
+        print(f"Preview render caught exception: {e}")
+    return None
 
 def run_full_auto_video_pipeline(
     script_text: str,
@@ -1125,6 +1272,8 @@ def run_full_auto_video_pipeline(
     progress_callback=None,
     cancel_event=None,
     eleven_key: str = "",
+    pexels_key: str = "",
+    ambient_k: str = "none",
     **kwargs
 ):
     """
@@ -1234,7 +1383,8 @@ def run_full_auto_video_pipeline(
                 openai_key=ai_key,
                 dalle_prompt=sc_item.get('dalle_prompt', ''),
                 main_topic=topic_to_use,
-                is_first_3_mins=sc_item.get('is_first_3_mins', False)
+                is_first_3_mins=sc_item.get('is_first_3_mins', False),
+                pexels_key=pexels_key
             )
             if not res and m_type_to_search not in ["both", "video"]:
                 res = safe_search_assets(
@@ -1247,7 +1397,8 @@ def run_full_auto_video_pipeline(
                     openai_key=ai_key,
                     dalle_prompt=sc_item.get('dalle_prompt', ''),
                     main_topic=topic_to_use,
-                    is_first_3_mins=sc_item.get('is_first_3_mins', False)
+                    is_first_3_mins=sc_item.get('is_first_3_mins', False),
+                    pexels_key=pexels_key
                 )
             if not res:
                 prompt_text = sc_item.get('dalle_prompt') or (f"Cinematic photorealistic 8k view of {topic_to_use}: {sc_item['text']}" if topic_to_use else sc_item['text'])
@@ -1439,6 +1590,7 @@ def run_full_auto_video_pipeline(
             notify(0.35 + (done_prep / total_scenes) * 0.25, f"🎙️ Synthesizing voice & visuals ({done_prep}/{total_scenes})...")
 
     prep_results.sort(key=lambda x: x["index"])
+    numbered_assets_for_zip = []
     for pr in prep_results:
         # Collect voiceover narration audio, subtitle overlays, and AI visual cards
         # DO NOT bundle 40MB+ raw unedited stock videos into the ZIP (processed clips are already in the ZIP)
@@ -1558,16 +1710,18 @@ def run_full_auto_video_pipeline(
         if cand_bgm.exists():
             active_bgm_path = cand_bgm
 
-    if active_bgm_path and active_bgm_path.exists():
-        bgm_label = BGM_CATALOG.get(bgm_k, {}).get("name", "Suspense Track")
-        notify(0.94, f"🎵 Mixing background music ({bgm_label}) under narration...")
+    has_ambient_track = bool(ambient_k and ambient_k != "none" and ambient_k in AMBIENT_CATALOG)
+    if (active_bgm_path and active_bgm_path.exists()) or has_ambient_track:
+        audio_label = BGM_CATALOG.get(bgm_k, {}).get("name", "Music") if active_bgm_path else AMBIENT_CATALOG.get(ambient_k, {}).get("name", "Atmosphere")
+        notify(0.94, f"🎵 Mixing music & atmosphere ({audio_label}) under narration...")
         try:
             bgm_ok = add_background_music_to_video(
                 video_path=raw_merged_file,
                 bgm_path=active_bgm_path,
                 output_path=final_merged_file,
                 bgm_volume=bgm_vol,
-                fade_out_duration=2.0
+                fade_out_duration=2.0,
+                ambient_key=ambient_k
             )
             if not bgm_ok or not final_merged_file.exists() or final_merged_file.stat().st_size == 0:
                 shutil.copy2(raw_merged_file, final_merged_file)
@@ -2357,7 +2511,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
 
 
         # Row 5: Action Buttons
-        col_act1, col_act2 = st.columns([3.5, 1.5])
+        col_act1, col_act2, col_act3 = st.columns([2.5, 1.8, 1.2])
         with col_act1:
             trigger_1click = st.button(
                 "🪄 Generate video ➔",
@@ -2366,6 +2520,13 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 help="Automatically finds best 1080p clips, adds voiceover & music, and builds complete video."
             )
         with col_act2:
+            trigger_preview = st.button(
+                "⚡ Scene 1 Preview (3s)",
+                type="secondary",
+                use_container_width=True,
+                help="Renders just Scene 1 in 3 seconds to preview voice, subtitles, and font before rendering full video."
+            )
+        with col_act3:
             btn_save_draft = st.button(
                 "🔖 Save draft",
                 type="secondary",
@@ -2381,6 +2542,43 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
             Turn your ideas into stunning videos with the power of AI
         </div>
         """, unsafe_allow_html=True)
+
+    if trigger_preview:
+        if not script_input.strip():
+            st.warning("Please enter or select a script first.")
+        else:
+            with st.spinner("⚡ Rendering 3-second Scene 1 Preview with GPU acceleration..."):
+                preview_params = {
+                    "script_text": script_input,
+                    "main_topic": main_topic_input,
+                    "media_pref": global_media_pref,
+                    "speed_mult": speed_multiplier,
+                    "tts_rate": tts_rate_str,
+                    "voice_name": selected_voice,
+                    "pb_key": pixabay_key,
+                    "pexels_key": pexels_key,
+                    "ai_key": openai_key,
+                    "eleven_key": elevenlabs_key,
+                    "tw": target_w,
+                    "th": target_h,
+                    "orient": orientation,
+                    "fit_m": fit_mode,
+                    "kb_style": ken_burns_style,
+                    "b_badge": burn_badge,
+                    "b_style": badge_style,
+                    "b_pos": badge_position,
+                    "b_subs": burn_subtitles,
+                    "sub_style": subtitle_style_choice,
+                    "sfx_vol": sfx_volume
+                }
+                res_prev = render_preview_scene_1(preview_params)
+                if res_prev and res_prev.exists():
+                    st.session_state.preview_video = str(res_prev)
+                    st.toast("⚡ Scene 1 Preview Ready!", icon="🎬")
+                    st.rerun()
+                else:
+                    st.error("❌ Could not render scene preview.")
+
     if trigger_1click:
         if not script_input.strip():
             st.warning("Please enter or select a script first.")
@@ -2437,6 +2635,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 "voice_name": selected_voice,
                 "do_voice": enable_voiceover,
                 "pb_key": pixabay_key,
+                "pexels_key": pexels_key,
                 "ai_key": openai_key,
                 "eleven_key": elevenlabs_key,
                 "tw": target_w,
@@ -2453,6 +2652,7 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 "bgm_k": selected_bgm_key,
                 "custom_bgm": custom_bgm_path,
                 "bgm_vol": bgm_volume,
+                "ambient_k": selected_ambient_key,
                 "sfx_vol": sfx_volume,
                 "niche_k": active_niche_k,
                 "existing_selected_assets": existing_custom_assets if existing_custom_assets else None,
@@ -2466,6 +2666,38 @@ YOUTUBE STUDIO UPLOAD KIT: {active_topic_raw}
                 st.rerun()
             else:
                 st.error(f"❌ Could not start background render: {j_id}")
+
+    # ⚡ Scene 1 Quick Preview Player
+    if st.session_state.get("preview_video"):
+        prev_p = Path(st.session_state.preview_video)
+        if prev_p.exists():
+            st.markdown("""
+            <div style="background:#F0FDF4; border:1px solid #86EFAC; border-radius:12px; padding:12px 16px; margin: 14px 0 10px 0;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-weight:800; color:#15803D; font-size:0.95rem;">⚡ Scene 1 Quick Preview Ready</span>
+                    <span style="font-size:0.75rem; font-weight:700; color:#15803D; background:#DCFCE7; padding:2px 8px; border-radius:999px;">● GPU Accelerated</span>
+                </div>
+                <div style="font-size:0.8rem; color:#4B5563; margin-top:4px;">
+                    Review your voiceover, subtitle typography, and visuals in this 3-second sample clip before rendering the full video.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            col_prev_v, col_prev_act = st.columns([2.5, 1])
+            with col_prev_v:
+                st.video(str(prev_p))
+            with col_prev_act:
+                with open(prev_p, "rb") as _f_prev:
+                    st.download_button(
+                        label="⬇️ Download Preview",
+                        data=_f_prev.read(),
+                        file_name="scene_1_preview.mp4",
+                        mime="video/mp4",
+                        key="btn_dl_scene_prev",
+                        use_container_width=True
+                    )
+                if st.button("❌ Close Preview", key="btn_close_scene_prev", use_container_width=True):
+                    st.session_state.pop("preview_video", None)
+                    st.rerun()
 
     # Quick Download & Location Banner (Right under generate button so users never miss it)
     if st.session_state.get("merged_video"):

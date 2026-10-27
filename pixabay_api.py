@@ -1,3 +1,4 @@
+from pandas.io import json
 import os
 import re
 import time
@@ -8,6 +9,7 @@ import requests
 from script_parser import generate_fallback_keywords
 
 DEFAULT_PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "57909969-ce94fac88b6effdff830e1aff")
+DEFAULT_PEXELS_KEY = os.environ.get("PEXELS_API_KEY", "")
 DEFAULT_OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 CACHE_DIR = Path(__file__).parent / "downloads" / "ai_generated"
@@ -210,6 +212,118 @@ def search_pixabay_images(query: str, key: str, orientation: str = "horizontal",
         print(f"Error querying Pixabay images: {e}")
     return []
 
+def search_pexels_videos(
+    query: str,
+    key: str = DEFAULT_PEXELS_KEY,
+    orientation: str = "horizontal",
+    per_page: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Searches Pexels Free High-Definition & 4K Stock Video Library:
+    Provides aesthetic, modern cinema-grade B-roll footage.
+    """
+    k = (key or DEFAULT_PEXELS_KEY).strip()
+    clean_q = query.strip()
+    if not k or not clean_q:
+        return []
+
+    url = "https://api.pexels.com/videos/search"
+    headers = {"Authorization": k, "User-Agent": "VideoCraftStudio/1.0"}
+    orient_param = "landscape" if orientation == "horizontal" else ("portrait" if orientation == "vertical" else "")
+    params = {
+        "query": clean_q,
+        "per_page": max(3, min(per_page, 20))
+    }
+    if orient_param:
+        params["orientation"] = orient_param
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            videos = data.get("videos", [])
+            results = []
+            for v in videos:
+                files = v.get("video_files", [])
+                if not files:
+                    continue
+                # Pick best 1080p or high quality streamable mp4
+                mp4_files = [f for f in files if (f.get("file_type") or "").lower() in ["video/mp4", ""] and f.get("link")]
+                h_files = [f for f in mp4_files if (f.get("height") or 0) >= 720]
+                chosen = h_files[0] if h_files else (mp4_files[0] if mp4_files else files[0])
+                if chosen and chosen.get("link"):
+                    results.append({
+                        "id": f"pex_v_{v.get('id')}",
+                        "source": "Pexels 4K",
+                        "type": "video",
+                        "tags": f"Pexels Footage: {clean_q}",
+                        "preview": v.get("image", ""),
+                        "download": chosen["link"],
+                        "width": chosen.get("width", 1920),
+                        "height": chosen.get("height", 1080),
+                        "duration": v.get("duration", 6),
+                        "author": v.get("user", {}).get("name", "Pexels Creator"),
+                        "page": v.get("url", ""),
+                        "matched_keyword": clean_q
+                    })
+            return results
+    except Exception as e:
+        print(f"Pexels video query error: {e}")
+    return []
+
+def search_pexels_photos(
+    query: str,
+    key: str = DEFAULT_PEXELS_KEY,
+    orientation: str = "horizontal",
+    per_page: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Searches Pexels Free High-Resolution Photography Library.
+    """
+    k = (key or DEFAULT_PEXELS_KEY).strip()
+    clean_q = query.strip()
+    if not k or not clean_q:
+        return []
+
+    url = "https://api.pexels.com/v1/search"
+    headers = {"Authorization": k, "User-Agent": "VideoCraftStudio/1.0"}
+    orient_param = "landscape" if orientation == "horizontal" else ("portrait" if orientation == "vertical" else "")
+    params = {
+        "query": clean_q,
+        "per_page": max(3, min(per_page, 20))
+    }
+    if orient_param:
+        params["orientation"] = orient_param
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            photos = data.get("photos", [])
+            results = []
+            for p in photos:
+                src = p.get("src", {})
+                img_url = src.get("large2x") or src.get("large") or src.get("original")
+                if img_url:
+                    results.append({
+                        "id": f"pex_p_{p.get('id')}",
+                        "source": "Pexels",
+                        "type": "image",
+                        "tags": f"Pexels Photo: {clean_q}",
+                        "preview": src.get("medium") or img_url,
+                        "download": img_url,
+                        "width": p.get("width", 1920),
+                        "height": p.get("height", 1080),
+                        "duration": None,
+                        "author": p.get("photographer", "Pexels Creator"),
+                        "page": p.get("url", ""),
+                        "matched_keyword": clean_q
+                    })
+            return results
+    except Exception as e:
+        print(f"Pexels photo query error: {e}")
+    return []
+
 def search_wikimedia_commons(query: str, per_page: int = 10) -> List[Dict[str, Any]]:
     """
     100% Free Public Domain Historical, Cultural & Factual Visuals API (Zero API Key Needed).
@@ -410,6 +524,7 @@ def search_assets(
     allow_ai_fallback: bool = True,
     main_topic: str = "",
     is_first_3_mins: bool = False,
+    pexels_key: str = DEFAULT_PEXELS_KEY,
     **kwargs
 ) -> List[Dict[str, Any]]:
     """
@@ -453,10 +568,14 @@ def search_assets(
         # 3. Search the COMPLETE OPEN INTERNET (Live web images from all websites)
         _add_results(search_open_web_images(search_target, per_page=8), search_target)
 
-        # 4. Search Pixabay stock footage & photos
+        # 4. Search Pixabay & Pexels stock footage & photos
         if media_type in ["both", "video"]:
             _add_results(search_pixabay_videos(search_target, key, orientation, per_page), search_target)
+            if pexels_key:
+                _add_results(search_pexels_videos(search_target, pexels_key, orientation, per_page), search_target)
         _add_results(search_pixabay_images(search_target, key, orientation, per_page), search_target)
+        if pexels_key:
+            _add_results(search_pexels_photos(search_target, pexels_key, orientation, per_page), search_target)
 
         # 5. Strict filter: discard any generic off-topic candidates
         t_words = [w for w in re.findall(r'[a-zA-Z0-9]{3,}', clean_t.lower()) if w not in ("the", "and", "for", "with", "video", "clip")]
@@ -488,7 +607,7 @@ def search_assets(
 
     # =========================================================================
     # NORMAL FLOW (AFTER 3 MINUTES / STANDARD PIPELINE)
-    # Complete internet search + Wikipedia + Pixabay videos + Wikimedia Commons
+    # Complete internet search + Wikipedia + Pixabay videos + Pexels + Wikimedia Commons
     # =========================================================================
     # Stage 1: Wikipedia Global Knowledge for exact script entities
     _add_results(search_wikipedia_images(query, per_page=5), query)
@@ -500,11 +619,15 @@ def search_assets(
     if clean_t and len(results) < 5:
         _add_results(search_open_web_images(f"{clean_t} {query}".strip()[:90], per_page=6), f"{clean_t} {query}")
 
-    # Stage 2: Pixabay Videos & Images
+    # Stage 2: Pixabay & Pexels Videos & Images
     if media_type in ["both", "video"]:
         _add_results(search_pixabay_videos(query, key, orientation, per_page), query)
+        if pexels_key:
+            _add_results(search_pexels_videos(query, pexels_key, orientation, per_page), query)
     if media_type in ["both", "image"]:
         _add_results(search_pixabay_images(query, key, orientation, per_page), query)
+        if pexels_key:
+            _add_results(search_pexels_photos(query, pexels_key, orientation, per_page), query)
 
     # Stage 3: Wikimedia Commons for historical/cultural authenticity
     if clean_t and len(results) < 6:
@@ -517,6 +640,8 @@ def search_assets(
         _add_results(search_open_web_images(sub_q, per_page=5), sub_q)
         if media_type in ["both", "video"]:
             _add_results(search_pixabay_videos(sub_q, key, orientation, per_page), sub_q)
+            if pexels_key:
+                _add_results(search_pexels_videos(sub_q, pexels_key, orientation, per_page), sub_q)
 
     # Stage 5: Topic-Anchored fallback
     if not results or len(results) < 3:
@@ -525,6 +650,8 @@ def search_assets(
             _add_results(search_wikimedia_commons(clean_t, per_page=5), clean_t)
             if media_type in ["both", "video"]:
                 _add_results(search_pixabay_videos(clean_t, key, orientation, per_page), clean_t)
+                if pexels_key:
+                    _add_results(search_pexels_videos(clean_t, pexels_key, orientation, per_page), clean_t)
 
     # Stage 6: Photorealistic AI image generation fallback
     if not results and allow_ai_fallback:

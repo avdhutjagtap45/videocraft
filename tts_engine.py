@@ -172,12 +172,12 @@ def _synthesize_openai_tts(text: str, voice_key: str, output_path: Path, api_key
         print(f"OpenAI TTS synthesis error: {e}")
     return False
 
-def _run_in_worker_thread(async_func, *args):
-    """Executes an async function inside a fresh worker thread with its own isolated event loop."""
+def _run_in_worker_thread(async_func, *args, timeout: float = 25.0):
+    """Executes an async function inside a fresh worker thread with its own isolated event loop and timeout."""
     def _worker():
         return asyncio.run(async_func(*args))
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(_worker).result()
+        return executor.submit(_worker).result(timeout=timeout)
 
 def _parse_rate_to_speed(rate: str) -> float:
     """Parses rate string like '+0%' to numeric speed multiplier 1.0."""
@@ -346,6 +346,11 @@ def generate_human_voiceover(
                     return dur
             except Exception as e:
                 print(f"[Attempt {attempt+1}] Edge-TTS worker error for '{voice}': {e}")
+                if output_path.exists() and output_path.stat().st_size < 500:
+                    try:
+                        output_path.unlink()
+                    except Exception:
+                        pass
                 time.sleep(0.4)
 
         # 4. Edge-TTS CLI Fallback
