@@ -305,14 +305,19 @@ def generate_fallback_keywords(sentence: str, primary_kw: str, topic: str = "") 
 # Target distribution: ~60% video clips and ~40% still images across scenes
 MEDIA_MIX_RATIO = ["video", "video", "image", "video", "image"]
 
+GENERIC_PLACEHOLDERS = {
+    "youtube_video", "youtube video", "untitled", "video", "asset", "project",
+    "my_video", "new video", ""
+}
+generic_placeholders = GENERIC_PLACEHOLDERS
+
 def detect_script_main_topic(script_text: str, custom_topic: str = "") -> str:
     """
     Identifies the core topic / subject of the entire video script.
     If custom_topic is provided, returns that cleaned topic.
     Otherwise, inspects all sentences across the entire script for dominant thematic triggers and subject nouns.
     """
-    generic_placeholders = {"youtube_video", "youtube video", "untitled", "video", "asset", "project", "my_video", "new video"}
-    if custom_topic and custom_topic.strip() and custom_topic.strip().lower() not in generic_placeholders:
+    if custom_topic and custom_topic.strip() and custom_topic.strip().lower() not in GENERIC_PLACEHOLDERS:
         return custom_topic.strip()
     
     if not script_text or not script_text.strip():
@@ -438,7 +443,7 @@ def parse_script_to_scenes(
         sc_kw = scenario_data["keyword"]
         for ph in ["YouTube_Video", "youtube_video", "YouTube Video", "youtube video"]:
             sc_kw = sc_kw.replace(ph, "").strip()
-        if is_first_3_mins and detected_topic and detected_topic.lower() not in generic_placeholders:
+        if is_first_3_mins and detected_topic and detected_topic.lower() not in GENERIC_PLACEHOLDERS:
             # Enforce topic-first keywords for the entire first 3 minutes
             sc_kw = f"{detected_topic} {sc_kw.replace(detected_topic, '').strip()}".strip()
 
